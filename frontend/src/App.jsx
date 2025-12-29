@@ -13,6 +13,12 @@ import Contact from './pages/public/Contact'
 // Admin Pages
 import AdminLogin from './pages/admin/AdminLogin'
 import AdminDashboard from './pages/admin/AdminDashboard'
+import ContentManager from './pages/admin/ContentManager'
+import ContentEditor from './pages/admin/ContentEditor'
+import MediaManager from './pages/admin/MediaManager'
+import CourierManager from './pages/admin/CourierManager'
+import PricingRulesEditor from './pages/admin/PricingRulesEditor'
+import Settings from './pages/admin/Settings'
 import ProtectedRoute from './components/common/ProtectedRoute'
 
 function App() {
@@ -40,6 +46,12 @@ function App() {
             }
           >
             <Route path="dashboard" element={<AdminDashboard />} />
+            <Route path="content" element={<ContentManager />} />
+            <Route path="content/:pageId" element={<ContentEditor />} />
+            <Route path="media" element={<MediaManager />} />
+            <Route path="couriers" element={<CourierManager />} />
+            <Route path="pricing" element={<PricingRulesEditor />} />
+            <Route path="settings" element={<Settings />} />
           </Route>
         </Routes>
       </Router>

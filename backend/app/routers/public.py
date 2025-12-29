@@ -2,12 +2,15 @@
 Public API endpoints (no authentication required)
 """
 from fastapi import APIRouter, HTTPException, status
+from fastapi.responses import Response
 from app.utils.json_handler import JSONHandler
 from app.models.content import PricingCalculate, PricingResult
 from app.utils.validators import validate_weight, validate_distance
 from app.config import settings
 from typing import List
 import json
+import httpx
+from urllib.parse import quote
 
 router = APIRouter()
 json_handler = JSONHandler(settings.DATA_DIR)
@@ -174,4 +177,110 @@ async def get_settings():
     """Get site settings"""
     settings_data = json_handler.read("settings.json")
     return settings_data
+
+
+@router.get("/logo/{courier_name}")
+async def get_courier_logo(courier_name: str):
+    """Proxy endpoint to fetch courier logos (bypasses CORS)"""
+    # Logo URL mapping - Using more reliable sources
+    logo_urls = {
+        'dtdc': 'https://upload.wikimedia.org/wikipedia/commons/1/1b/DTDC_logo.svg',
+        'bluedart': 'https://upload.wikimedia.org/wikipedia/commons/7/7d/Blue_Dart_Express_logo.svg',
+        'blue-dart': 'https://upload.wikimedia.org/wikipedia/commons/7/7d/Blue_Dart_Express_logo.svg',
+        'blue dart': 'https://upload.wikimedia.org/wikipedia/commons/7/7d/Blue_Dart_Express_logo.svg',
+        'fedex': 'https://upload.wikimedia.org/wikipedia/commons/3/3b/FedEx_Express.svg',
+        'fed ex': 'https://upload.wikimedia.org/wikipedia/commons/3/3b/FedEx_Express.svg',
+        'fed-ex': 'https://upload.wikimedia.org/wikipedia/commons/3/3b/FedEx_Express.svg',
+        'delhivery': 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8a/Delhivery_logo.svg/256px-Delhivery_logo.svg.png',
+        'shiprocket': 'https://www.shiprocket.in/wp-content/uploads/2020/11/shiprocket-logo.svg',
+        'ship rocket': 'https://www.shiprocket.in/wp-content/uploads/2020/11/shiprocket-logo.svg',
+        'dhl': 'https://upload.wikimedia.org/wikipedia/commons/7/77/DHL_Logo.svg',
+        'ups': 'https://upload.wikimedia.org/wikipedia/commons/6/60/UPS_logo_2014.svg',
+        'aramex': 'https://upload.wikimedia.org/wikipedia/commons/8/8a/Aramex_logo.svg',
+    }
+    
+    courier_key = courier_name.lower().strip()
+    logo_url = logo_urls.get(courier_key)
+    
+    if not logo_url:
+        # Try variations
+        variations = [
+            courier_key.replace(" ", ""),
+            courier_key.replace(" ", "-"),
+            courier_key.replace("-", ""),
+        ]
+        for var in variations:
+            if var in logo_urls:
+                logo_url = logo_urls[var]
+                break
+    
+    if not logo_url:
+        # Fallback: try Clearbit
+        domain = courier_key.replace(" ", "").replace("-", "")
+        logo_url = f'https://logo.clearbit.com/{domain}.com'
+    
+    try:
+        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+            # Add user agent to avoid blocking
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+            response = await client.get(logo_url, headers=headers)
+            
+            if response.status_code == 200 and len(response.content) > 0:
+                # Determine content type
+                content_type = response.headers.get('content-type', 'image/png')
+                if 'svg' in logo_url.lower() or 'svg' in content_type.lower():
+                    content_type = 'image/svg+xml'
+                elif 'png' in content_type.lower():
+                    content_type = 'image/png'
+                elif 'jpeg' in content_type.lower() or 'jpg' in content_type.lower():
+                    content_type = 'image/jpeg'
+                
+                return Response(
+                    content=response.content,
+                    media_type=content_type,
+                    headers={
+                        'Cache-Control': 'public, max-age=86400',  # Cache for 1 day
+                        'Access-Control-Allow-Origin': '*',
+                    }
+                )
+            else:
+                raise HTTPException(
+                    status_code=404, 
+                    detail=f"Logo not found (status: {response.status_code})"
+                )
+    except httpx.TimeoutException:
+        # Return a simple SVG placeholder
+        svg_placeholder = f'''<svg width="200" height="100" xmlns="http://www.w3.org/2000/svg">
+  <rect width="200" height="100" fill="#f3f4f6"/>
+  <text x="50%" y="50%" font-family="Arial, sans-serif" font-size="16" fill="#6b7280" text-anchor="middle" dominant-baseline="middle">{courier_name}</text>
+</svg>'''
+        return Response(
+            content=svg_placeholder.encode('utf-8'),
+            media_type='image/svg+xml',
+            headers={'Cache-Control': 'public, max-age=3600'}
+        )
+    except httpx.RequestError as e:
+        # Return a simple SVG placeholder
+        svg_placeholder = f'''<svg width="200" height="100" xmlns="http://www.w3.org/2000/svg">
+  <rect width="200" height="100" fill="#f3f4f6"/>
+  <text x="50%" y="50%" font-family="Arial, sans-serif" font-size="16" fill="#6b7280" text-anchor="middle" dominant-baseline="middle">{courier_name}</text>
+</svg>'''
+        return Response(
+            content=svg_placeholder.encode('utf-8'),
+            media_type='image/svg+xml',
+            headers={'Cache-Control': 'public, max-age=3600'}
+        )
+    except Exception as e:
+        # Return a simple SVG placeholder as fallback
+        svg_placeholder = f'''<svg width="200" height="100" xmlns="http://www.w3.org/2000/svg">
+  <rect width="200" height="100" fill="#f3f4f6"/>
+  <text x="50%" y="50%" font-family="Arial, sans-serif" font-size="16" fill="#6b7280" text-anchor="middle" dominant-baseline="middle">{courier_name}</text>
+</svg>'''
+        return Response(
+            content=svg_placeholder.encode('utf-8'),
+            media_type='image/svg+xml',
+            headers={'Cache-Control': 'public, max-age=3600'}
+        )
 
