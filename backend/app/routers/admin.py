@@ -6,7 +6,10 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.utils.json_handler import JSONHandler
 from app.utils.file_handler import FileHandler
 from app.auth import verify_password, get_password_hash, verify_token, create_access_token
-from app.models.admin import AdminLogin, AdminResponse, DashboardStats
+from app.models.admin import (
+    AdminLogin, AdminResponse, DashboardStats,
+    ProfileUpdate, PasswordChange, ProfileResponse
+)
 from app.models.content import (
     PageContent, SectionUpdate, CourierCreate, CourierUpdate,
     PricingRuleCreate, PricingRuleUpdate, SettingsUpdate
@@ -110,6 +113,129 @@ async def admin_logout(current_admin: str = Depends(get_current_admin)):
     return {"message": "Logged out successfully"}
 
 
+# Profile Management Endpoints
+@router.get("/profile", response_model=ProfileResponse)
+async def get_profile(current_admin: str = Depends(get_current_admin)):
+    """Get current admin profile"""
+    admin_data = json_handler.read("admin.json")
+    users = admin_data.get("users", [])
+    
+    user = next((u for u in users if u.get("username") == current_admin), None)
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # Ensure all fields are present (handle legacy data)
+    return ProfileResponse(
+        username=user.get("username"),
+        email=user.get("email"),
+        full_name=user.get("full_name"),
+        description=user.get("description"),
+        phone=user.get("phone"),
+        avatar=user.get("avatar"),
+        created_at=user.get("created_at", datetime.utcnow().isoformat()),
+        last_login=user.get("last_login"),
+        updated_at=user.get("updated_at")
+    )
+
+
+@router.put("/profile", response_model=ProfileResponse)
+async def update_profile(
+    profile_update: ProfileUpdate,
+    current_admin: str = Depends(get_current_admin)
+):
+    """Update admin profile"""
+    admin_data = json_handler.read("admin.json")
+    users = admin_data.get("users", [])
+    
+    user_idx = next((i for i, u in enumerate(users) if u.get("username") == current_admin), -1)
+    
+    if user_idx == -1:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # Update fields
+    user = users[user_idx]
+    update_data = profile_update.model_dump(exclude_unset=True)
+    
+    # Start basic update
+    user.update(update_data)
+    user["updated_at"] = datetime.utcnow().isoformat()
+    
+    # Save back
+    users[user_idx] = user
+    admin_data["users"] = users
+    json_handler.write("admin.json", admin_data)
+    
+    # Log action
+    from app.utils.admin_logger import log_admin_action
+    log_admin_action("UPDATE_PROFILE", "auth", current_admin)
+    
+    return ProfileResponse(
+        username=user.get("username"),
+        email=user.get("email"),
+        full_name=user.get("full_name"),
+        description=user.get("description"),
+        phone=user.get("phone"),
+        avatar=user.get("avatar"),
+        created_at=user.get("created_at", datetime.utcnow().isoformat()),
+        last_login=user.get("last_login"),
+        updated_at=user.get("updated_at")
+    )
+
+
+@router.post("/profile/password")
+async def change_password(
+    password_data: PasswordChange,
+    current_admin: str = Depends(get_current_admin)
+):
+    """Change admin password"""
+    if password_data.new_password != password_data.confirm_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New passwords do not match"
+        )
+        
+    admin_data = json_handler.read("admin.json")
+    users = admin_data.get("users", [])
+    
+    user_idx = next((i for i, u in enumerate(users) if u.get("username") == current_admin), -1)
+    
+    if user_idx == -1:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+        
+    user = users[user_idx]
+    
+    # Verify current password
+    if not verify_password(password_data.current_password, user.get("password_hash", "")):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Incorrect current password"
+        )
+        
+    # Update password
+    user["password_hash"] = get_password_hash(password_data.new_password)
+    user["updated_at"] = datetime.utcnow().isoformat()
+    
+    users[user_idx] = user
+    admin_data["users"] = users
+    json_handler.write("admin.json", admin_data)
+    
+    # Log action
+    from app.utils.admin_logger import log_admin_action
+    log_admin_action("CHANGE_PASSWORD", "auth", current_admin)
+    
+    return {"message": "Password changed successfully"}
+
+
 @router.get("/dashboard/stats", response_model=DashboardStats)
 async def get_dashboard_stats(current_admin: str = Depends(get_current_admin)):
     """Get dashboard statistics"""
@@ -148,6 +274,24 @@ async def get_dashboard_stats(current_admin: str = Depends(get_current_admin)):
 
 
 # Content Management Endpoints
+@router.get("/content/pages")
+async def get_all_pages(current_admin: str = Depends(get_current_admin)):
+    """Get all pages summary"""
+    pages = json_handler.read("pages.json")
+    
+    pages_list = []
+    for page_id, data in pages.items():
+        pages_list.append({
+            "id": page_id,
+            "lastModified": data.get("lastModified"),
+            "published": data.get("published", True),
+            # In a real app we might store author, for now hardcode or infer
+            "author": "Admin" 
+        })
+        
+    return pages_list
+
+
 @router.get("/content/{page_id}")
 async def get_page_content(page_id: str, current_admin: str = Depends(get_current_admin)):
     """Get page content for editing"""
@@ -260,6 +404,7 @@ async def upload_media(
         "filename": filename,
         "original_name": file.filename,
         "path": relative_path,
+        "size": len(file_content),
         "uploaded_at": datetime.utcnow().isoformat(),
         "uploaded_by": current_admin
     })
@@ -528,3 +673,34 @@ async def update_settings(
     
     return {"message": "Settings updated successfully", "settings": settings_data}
 
+
+# Avatar Upload
+@router.post("/upload/avatar")
+async def upload_avatar(
+    file: UploadFile = File(...),
+    current_admin: str = Depends(get_current_admin)
+):
+    """Upload admin avatar"""
+    # 1. Validate file type
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File must be an image"
+        )
+    
+    # 2. Save file
+    try:
+        # Use file_handler to save to "avatars" subdirectory
+        # Note: file_handler.save expects a subfolder relative to UPLOADS_DIR
+        file_path = await file_handler.save(file, "avatars")
+        
+        # 3. Construct URL
+        # Assumption: Static files are served from /static/uploads
+        avatar_url = f"/static/uploads/{file_path}"
+        
+        return {"url": avatar_url}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload image: {str(e)}"
+        )

@@ -52,6 +52,13 @@ const Contact = () => {
   const contact = settings?.contact || {}
   const content = pageData?.content || {}
   
+  const getImageUrl = (filename) => {
+    if (!filename) return null
+    return `http://localhost:8000/uploads/${filename}`
+  }
+  
+  const pageImage = content.image
+  
   // Default location: Bangalore, India
   const defaultAddress = "Bangalore, Karnataka, India"
   const contactAddress = contact.address || defaultAddress
@@ -116,13 +123,17 @@ const Contact = () => {
     
     setIsSubmitting(true)
     setSubmitSuccess(false)
+    setFormErrors({})
     
     try {
-      // TODO: Replace with actual API endpoint when backend is ready
-      // await publicAPI.submitContactForm(formData)
-      
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500))
+      // Submit contact form to backend
+      await publicAPI.submitContactForm({
+        name: formData.name,
+        email: formData.email,
+        phone: formData.phone,
+        message: formData.message,
+        honeypot: '' // Honeypot field (hidden from users)
+      })
       
       setSubmitSuccess(true)
       setFormData({ name: '', phone: '', email: '', message: '' })
@@ -133,7 +144,28 @@ const Contact = () => {
       }, 5000)
     } catch (error) {
       console.error('Failed to submit contact form:', error)
-      setFormErrors({ submit: 'Failed to send message. Please try again later.' })
+      
+      // Handle different error types
+      if (error.response?.status === 429) {
+        setFormErrors({ submit: 'Too many submissions. Please try again later.' })
+      } else if (error.response?.data?.detail) {
+        // Validation errors from backend
+        const detail = error.response.data.detail
+        if (Array.isArray(detail)) {
+          // Pydantic validation errors
+          const errors = {}
+          detail.forEach(err => {
+            if (err.loc && err.loc.length > 1) {
+              errors[err.loc[1]] = err.msg
+            }
+          })
+          setFormErrors(errors)
+        } else {
+          setFormErrors({ submit: detail })
+        }
+      } else {
+        setFormErrors({ submit: 'Failed to send message. Please try again later.' })
+      }
     } finally {
       setIsSubmitting(false)
     }
@@ -142,7 +174,14 @@ const Contact = () => {
   return (
     <div className="min-h-screen">
       {/* Hero Section with Media */}
-      <section className="relative py-16 lg:py-20 overflow-hidden bg-gradient-to-br from-green-200 via-emerald-100 to-teal-200">
+      <section 
+        className="relative py-16 lg:py-20 overflow-hidden bg-gradient-to-br from-green-200 via-emerald-100 to-teal-200"
+        style={pageImage ? {
+          backgroundImage: `url(${getImageUrl(pageImage)})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+        } : {}}
+      >
         {/* Animated Background Elements */}
         <div className="absolute inset-0 opacity-10">
           <motion.div

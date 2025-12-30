@@ -60,11 +60,25 @@ const Pricing = () => {
   }
 
   const content = pageData?.content || {}
+  
+  const getImageUrl = (filename) => {
+    if (!filename) return null
+    return `http://localhost:8000/uploads/${filename}`
+  }
+  
+  const pageImage = content.image
 
   return (
     <div className="min-h-screen">
       {/* Hero Section with Media - Matching Other Pages */}
-      <section className="relative py-16 lg:py-20 overflow-hidden bg-gradient-to-br from-blue-200 via-blue-100 to-indigo-200">
+      <section 
+        className="relative py-16 lg:py-20 overflow-hidden bg-gradient-to-br from-blue-200 via-blue-100 to-indigo-200"
+        style={pageImage ? {
+          backgroundImage: `url(${getImageUrl(pageImage)})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+        } : {}}
+      >
         {/* Animated Background Elements */}
         <div className="absolute inset-0 opacity-10">
           <motion.div

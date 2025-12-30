@@ -37,6 +37,11 @@ const About = () => {
 
   const content = pageData?.content || {}
   const sections = content.sections || []
+  
+  const getImageUrl = (filename) => {
+    if (!filename) return null
+    return `http://localhost:8000/uploads/${filename}`
+  }
 
   // Default content for logistics aggregator
   const aboutContent = {
@@ -213,17 +218,24 @@ const About = () => {
               viewport={{ once: true }}
               transition={{ duration: 0.6 }}
             >
-              <div 
-                className="rounded-2xl overflow-hidden shadow-lg"
-                style={{
-                  backgroundImage: 'url(https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=800&h=600&fit=crop)',
-                  backgroundSize: 'cover',
-                  backgroundPosition: 'center',
-                  aspectRatio: '4/3'
-                }}
-              >
-                <div className="absolute inset-0 bg-gradient-to-br from-primary-500/20 to-secondary-500/20"></div>
-              </div>
+              {(() => {
+                const whoWeAreSection = sections.find(s => s.title === "Who We Are")
+                const sectionImage = whoWeAreSection?.image
+                const imageUrl = sectionImage ? getImageUrl(sectionImage) : 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=800&h=600&fit=crop'
+                return (
+                  <div 
+                    className="rounded-2xl overflow-hidden shadow-lg"
+                    style={{
+                      backgroundImage: `url(${imageUrl})`,
+                      backgroundSize: 'cover',
+                      backgroundPosition: 'center',
+                      aspectRatio: '4/3'
+                    }}
+                  >
+                    <div className="absolute inset-0 bg-gradient-to-br from-primary-500/20 to-secondary-500/20"></div>
+                  </div>
+                )
+              })()}
             </motion.div>
             <motion.div
               initial={{ opacity: 0, x: 30 }}

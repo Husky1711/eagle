@@ -57,7 +57,6 @@ const CourierCard = ({ courier, logoUrl, index }) => {
 
 const Home = () => {
   const [pageData, setPageData] = useState(null)
-  const [sections, setSections] = useState(null)
   const [couriers, setCouriers] = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -136,31 +135,6 @@ const Home = () => {
         setPageData(pageRes.data)
         setCouriers(couriersRes.data || [])
         
-        // Fetch sections - we'll use default structure for now
-        // Sections can be added to pages.json or fetched separately later
-        setSections({
-          home: {
-            how_it_works: {
-              enabled: true,
-              title: "How It Works",
-              steps: [
-                { id: 1, title: "Drop Your Parcel", description: "Bring your parcel to our logistics center", icon: "" },
-                { id: 2, title: "We Choose Best Courier", description: "We compare multiple courier partners and select the best option for you", icon: "" },
-                { id: 3, title: "Fast & Safe Delivery", description: "Your parcel is delivered safely and on time", icon: "" },
-              ]
-            },
-            why_choose_us: {
-              enabled: true,
-              title: "Why Choose Us",
-              features: [
-                { id: 1, title: "Best Prices", description: "We compare multiple vendors to get you the best rates", icon: "" },
-                { id: 2, title: "Fast Delivery", description: "Quick and reliable delivery options", icon: "" },
-                { id: 3, title: "Easy Tracking", description: "Track your parcels across multiple courier services", icon: "" },
-              ]
-            }
-          }
-        })
-        
         setLoading(false)
       } catch (error) {
         console.error('Failed to fetch home page data:', error)
@@ -182,7 +156,9 @@ const Home = () => {
   }
 
   const hero = pageData?.content?.hero || {}
-  const howItWorks = sections?.home?.how_it_works || {
+  
+  // Get sections from pageData (from backend) instead of hardcoded
+  const howItWorks = pageData?.content?.how_it_works || {
     enabled: true,
     title: "How It Works",
     steps: [
@@ -191,7 +167,7 @@ const Home = () => {
       { id: 3, title: "Fast & Safe Delivery", description: "Your parcel is delivered safely and on time", icon: "" },
     ]
   }
-  const whyChooseUs = sections?.home?.why_choose_us || {
+  const whyChooseUs = pageData?.content?.why_choose_us || {
     enabled: true,
     title: "Why Choose Us",
     features: [
@@ -201,18 +177,60 @@ const Home = () => {
     ]
   }
 
-  return (
-    <div className="min-h-screen">
-      {/* Hero Section - Carousel as Background */}
-      <section className="relative min-h-[600px] lg:min-h-[700px] overflow-hidden">
-        {/* Carousel Background - Full Width */}
-        <div className="absolute inset-0 z-0">
-          <HeroCarousel />
-        </div>
+        const heroImages = pageData?.content?.heroImages
+        const heroImage = pageData?.content?.heroImage // Fallback for backward compatibility
+        const getImageUrl = (filename) => {
+          if (!filename) return null
+          return `http://localhost:8000/uploads/${filename}`
+        }
+
+        // Prepare carousel images from uploaded images
+        // Check if we have valid uploaded images
+        const hasHeroImages = heroImages && Array.isArray(heroImages) && heroImages.length > 0
+        const hasHeroImage = heroImage && heroImage.trim() !== '' && heroImage.trim() !== 'null'
         
-        {/* Dark Overlay for Text Readability */}
-        <div className="absolute inset-0 z-10 bg-gradient-to-r from-neutral-900/70 via-neutral-800/60 to-neutral-900/50"></div>
-        <div className="absolute inset-0 z-10 bg-gradient-to-b from-transparent via-transparent to-neutral-900/40"></div>
+        let carouselImages = null
+        
+        if (hasHeroImages) {
+          // Use multiple hero images
+          carouselImages = heroImages
+            .filter(filename => filename && filename.trim() !== '' && filename.trim() !== 'null') // Filter out empty strings and 'null'
+            .map((filename, index) => ({
+              id: index + 1,
+              url: getImageUrl(filename),
+              alt: `Hero image ${index + 1}`,
+              title: hero.headline || '',
+              subtitle: hero.subheadline || ''
+            }))
+          
+          // If all images were filtered out, set to null to use defaults
+          if (carouselImages.length === 0) {
+            carouselImages = null
+          }
+        } else if (hasHeroImage) {
+          // Use single hero image - but we'll let HeroCarousel handle error fallback
+          carouselImages = [{
+            id: 1,
+            url: getImageUrl(heroImage),
+            alt: 'Hero image',
+            title: hero.headline || '',
+            subtitle: hero.subheadline || ''
+          }]
+        }
+        // If carouselImages is still null, HeroCarousel will use default images
+
+        return (
+          <div className="min-h-screen">
+            {/* Hero Section - Carousel or Hero Image as Background */}
+            <section className="relative min-h-[600px] lg:min-h-[700px] overflow-hidden">
+              {/* Background - Hero Images Carousel or Single Image or Default Carousel */}
+              <div className="absolute inset-0 z-0">
+                <HeroCarousel images={carouselImages || undefined} />
+              </div>
+              
+              {/* Dark Overlay for Text Readability */}
+              <div className="absolute inset-0 z-10 bg-gradient-to-r from-neutral-900/70 via-neutral-800/60 to-neutral-900/50"></div>
+              <div className="absolute inset-0 z-10 bg-gradient-to-b from-transparent via-transparent to-neutral-900/40"></div>
         
         {/* Content Overlay */}
         <Container className="relative z-20 h-full">

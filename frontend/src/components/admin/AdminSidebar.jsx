@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
-import { LayoutDashboard, FileText, Image, Truck, DollarSign, Settings, LogOut, ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { LayoutDashboard, FileText, Image, Truck, DollarSign, Settings, LogOut, ChevronLeft, ChevronRight, X, User } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useEffect } from 'react'
 
@@ -22,6 +22,7 @@ const AdminSidebar = ({ isOpen, onClose, onToggleCollapse, collapsed }) => {
     { path: '/admin/couriers', icon: Truck, label: 'Couriers' },
     { path: '/admin/pricing', icon: DollarSign, label: 'Pricing Rules' },
     { path: '/admin/settings', icon: Settings, label: 'Settings' },
+    { path: '/admin/profile', icon: User, label: 'Profile' },
   ]
 
   const isActive = (path) => location.pathname.startsWith(path)
@@ -38,12 +39,14 @@ const AdminSidebar = ({ isOpen, onClose, onToggleCollapse, collapsed }) => {
 
       {/* Sidebar */}
       <aside className={`
-        fixed md:static inset-y-0 left-0 z-50
+        fixed inset-y-0 left-0 z-50
         bg-white border-r border-neutral-200 transition-all duration-300
         w-64 ${collapsed ? 'md:w-16' : 'md:w-64'}
         ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
         flex flex-col
         shadow-lg md:shadow-none
+        h-screen
+        overflow-y-auto
       `}>
         <div className={`p-4 border-b border-neutral-200 ${collapsed ? 'md:p-2 md:relative' : ''}`}>
           <div className={`flex items-center ${collapsed ? 'md:justify-center' : 'justify-between'}`}>
@@ -80,51 +83,51 @@ const AdminSidebar = ({ isOpen, onClose, onToggleCollapse, collapsed }) => {
             )}
           </div>
         </div>
-      
-      <nav className="flex-1 p-2 md:p-4 space-y-2">
-        {menuItems.map((item) => {
-          const Icon = item.icon
-          return (
-            <Link
-              key={item.path}
-              to={item.path}
-              className={`
+
+        <nav className="flex-1 p-2 md:p-4 space-y-2">
+          {menuItems.map((item) => {
+            const Icon = item.icon
+            return (
+              <Link
+                key={item.path}
+                to={item.path}
+                className={`
                 flex items-center rounded-lg transition-colors duration-200
-                ${collapsed 
-                  ? 'md:justify-center md:px-2 md:py-3' 
-                  : 'space-x-3 px-4 py-3'
-                }
+                ${collapsed
+                    ? 'md:justify-center md:px-2 md:py-3'
+                    : 'space-x-3 px-4 py-3'
+                  }
                 ${isActive(item.path)
-                  ? 'bg-primary-50 text-primary-600'
-                  : 'text-neutral-600 hover:bg-neutral-50'
-                }
+                    ? 'bg-primary-50 text-primary-600'
+                    : 'text-neutral-600 hover:bg-neutral-50'
+                  }
               `}
-              title={collapsed ? item.label : ''}
-            >
-              <Icon size={20} />
-              <span className={`font-medium ${collapsed ? 'md:hidden' : ''}`}>{item.label}</span>
-            </Link>
-          )
-        })}
-      </nav>
-      
-      <div className="p-2 md:p-4 border-t border-neutral-200">
-        <button
-          onClick={logout}
-          className={`
+                title={collapsed ? item.label : ''}
+              >
+                <Icon size={20} />
+                <span className={`font-medium ${collapsed ? 'md:hidden' : ''}`}>{item.label}</span>
+              </Link>
+            )
+          })}
+        </nav>
+
+        <div className="p-2 md:p-4 border-t border-neutral-200">
+          <button
+            onClick={logout}
+            className={`
             flex items-center rounded-lg text-neutral-600 hover:bg-neutral-50 w-full transition-colors
-            ${collapsed 
-              ? 'md:justify-center md:px-2 md:py-3' 
-              : 'space-x-3 px-4 py-3'
-            }
+            ${collapsed
+                ? 'md:justify-center md:px-2 md:py-3'
+                : 'space-x-3 px-4 py-3'
+              }
           `}
-          title={collapsed ? 'Logout' : ''}
-        >
-          <LogOut size={20} />
-          <span className={`font-medium ${collapsed ? 'md:hidden' : ''}`}>Logout</span>
-        </button>
-      </div>
-    </aside>
+            title={collapsed ? 'Logout' : ''}
+          >
+            <LogOut size={20} />
+            <span className={`font-medium ${collapsed ? 'md:hidden' : ''}`}>Logout</span>
+          </button>
+        </div>
+      </aside>
     </>
   )
 }

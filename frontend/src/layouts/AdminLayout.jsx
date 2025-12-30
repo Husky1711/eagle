@@ -20,16 +20,20 @@ const AdminLayout = () => {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-50 flex">
+    <div className="min-h-screen bg-neutral-50">
       <AdminSidebar
         isOpen={sidebarOpen}
         onClose={closeSidebar}
         onToggleCollapse={toggleCollapse}
         collapsed={sidebarCollapsed}
       />
-      <div className="flex-1 flex flex-col md:ml-0 transition-all duration-300">
+      <div 
+        className={`flex-1 flex flex-col transition-all duration-300 ${
+          sidebarCollapsed ? 'md:ml-16' : 'md:ml-64'
+        }`}
+      >
         <AdminHeader onMenuClick={toggleSidebar} />
-        <main className="flex-1 p-4 md:p-6">
+        <main className="flex-1 p-4 md:p-6 overflow-y-auto">
           <Outlet />
         </main>
       </div>

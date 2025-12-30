@@ -60,11 +60,25 @@ const Tracking = () => {
   }
 
   const content = pageData?.content || {}
+  
+  const getImageUrl = (filename) => {
+    if (!filename) return null
+    return `http://localhost:8000/uploads/${filename}`
+  }
+  
+  const pageImage = content.image
 
   return (
     <div className="min-h-screen">
       {/* Hero Section with Background Image */}
-      <section className="relative py-20 lg:py-24 overflow-hidden bg-gradient-to-br from-indigo-200 via-purple-100 to-pink-200">
+      <section 
+        className="relative py-20 lg:py-24 overflow-hidden bg-gradient-to-br from-indigo-200 via-purple-100 to-pink-200"
+        style={pageImage ? {
+          backgroundImage: `url(${getImageUrl(pageImage)})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+        } : {}}
+      >
         {/* Background Pattern */}
         <div className="absolute inset-0 opacity-10">
           <div className="absolute top-0 left-0 w-96 h-96 bg-indigo-300 rounded-full blur-3xl"></div>

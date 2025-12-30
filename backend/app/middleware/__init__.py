@@ -16,6 +16,7 @@ spec.loader.exec_module(middleware_module)
 
 setup_cors = middleware_module.setup_cors
 rate_limit_login = middleware_module.rate_limit_login
+rate_limit_contact = middleware_module.rate_limit_contact
 
-__all__ = ["setup_cors", "rate_limit_login"]
+__all__ = ["setup_cors", "rate_limit_login", "rate_limit_contact"]
 

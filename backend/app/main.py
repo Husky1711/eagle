@@ -10,6 +10,7 @@ from app.config import settings
 from app.middleware import setup_cors
 from app.middleware.logging import LoggingMiddleware
 from app.routers import public, admin
+from app.routers import admin_profile
 from app.utils.logger import logger
 from app.utils.log_sanitizer import LogSanitizer
 import traceback
@@ -33,6 +34,7 @@ app.mount("/uploads", StaticFiles(directory=str(settings.UPLOADS_DIR)), name="up
 # Include routers
 app.include_router(public.router, prefix="/api/public", tags=["Public"])
 app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
+app.include_router(admin_profile.router, prefix="/api/admin", tags=["Admin"])
 
 
 @app.exception_handler(Exception)

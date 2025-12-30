@@ -48,6 +48,7 @@ export const publicAPI = {
   getTrackingUrl: (courierId, trackingId) =>
     api.get(`/public/tracking/${courierId}/${trackingId}`),
   getSettings: () => api.get('/public/settings'),
+  submitContactForm: (data) => api.post('/public/contact', data),
 }
 
 // Admin API endpoints
@@ -55,6 +56,7 @@ export const adminAPI = {
   login: (credentials) => api.post('/admin/login', credentials),
   logout: () => api.post('/admin/logout'),
   getDashboardStats: () => api.get('/admin/dashboard/stats'),
+  getPages: () => api.get('/admin/content/pages'),
   getPageContent: (pageId) => api.get(`/admin/content/${pageId}`),
   updatePageContent: (pageId, data) => api.put(`/admin/content/${pageId}`, data),
   toggleSection: (sectionId, enabled) =>
@@ -78,6 +80,12 @@ export const adminAPI = {
   deletePricingRule: (ruleId) => api.delete(`/admin/pricing/rules/${ruleId}`),
   getSettings: () => api.get('/admin/settings'),
   updateSettings: (data) => api.put('/admin/settings', data),
+  getProfile: () => api.get('/admin/profile'),
+  updateProfile: (data) => api.put('/admin/profile', data),
+  changePassword: (data) => api.post('/admin/profile/password', data),
+  uploadAvatar: (formData) => api.post('/admin/upload/avatar', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
 }
 
 export default api

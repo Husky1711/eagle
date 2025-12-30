@@ -19,6 +19,7 @@ import MediaManager from './pages/admin/MediaManager'
 import CourierManager from './pages/admin/CourierManager'
 import PricingRulesEditor from './pages/admin/PricingRulesEditor'
 import Settings from './pages/admin/Settings'
+import AdminProfile from './pages/admin/AdminProfile'
 import ProtectedRoute from './components/common/ProtectedRoute'
 
 function App() {
@@ -52,6 +53,7 @@ function App() {
             <Route path="couriers" element={<CourierManager />} />
             <Route path="pricing" element={<PricingRulesEditor />} />
             <Route path="settings" element={<Settings />} />
+            <Route path="profile" element={<AdminProfile />} />
           </Route>
         </Routes>
       </Router>
