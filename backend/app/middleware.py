@@ -16,14 +16,21 @@ contact_rate_limit_store = defaultdict(list)
 def setup_cors(app):
     """Setup CORS middleware"""
     from app.config import settings
-    origins = settings.cors_origins_list if hasattr(settings, 'cors_origins_list') else ["*"]
+    origins = settings.cors_origins_list if hasattr(settings, 'cors_origins_list') else []
+    
+    # SECURITY: Never allow all origins in production
+    if not origins or origins == ["*"]:
+        from app.utils.logger import logger
+        logger.warning("CORS_ORIGINS not configured properly! Defaulting to empty list for security.")
+        origins = []
     
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=origins,
+        allow_origins=origins,  # Restrictive - only specified origins
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],  # Specific methods only
+        allow_headers=["Content-Type", "Authorization", "X-API-Key", "X-Image-Token"],  # Specific headers only
+        expose_headers=["X-RateLimit-Remaining", "X-RateLimit-Reset-After"],  # Rate limit headers
     )
 
 

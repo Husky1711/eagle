@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
-import { LayoutDashboard, FileText, Image, Truck, DollarSign, Settings, LogOut, ChevronLeft, ChevronRight, X, User } from 'lucide-react'
+import { LayoutDashboard, FileText, Image, Truck, DollarSign, Settings, LogOut, ChevronLeft, ChevronRight, X, User, Layout, MessageCircle } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useEffect } from 'react'
 
@@ -22,6 +22,8 @@ const AdminSidebar = ({ isOpen, onClose, onToggleCollapse, collapsed }) => {
     { path: '/admin/couriers', icon: Truck, label: 'Couriers' },
     { path: '/admin/pricing', icon: DollarSign, label: 'Pricing Rules' },
     { path: '/admin/settings', icon: Settings, label: 'Settings' },
+    { path: '/admin/global-settings', icon: Layout, label: 'Global Styles' },
+    { path: '/admin/chat', icon: MessageCircle, label: 'AI Manager' },
     { path: '/admin/profile', icon: User, label: 'Profile' },
   ]
 

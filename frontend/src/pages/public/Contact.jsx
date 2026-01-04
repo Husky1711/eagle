@@ -49,18 +49,24 @@ const Contact = () => {
     )
   }
 
-  const contact = settings?.contact || {}
+  // Scraped Defaults
+  const contact = settings?.contact || {
+    address: '15/2, 6th Cross, 1St Main Road, Sampangi Rama Nagar, Near Corporation Circle, Bangalore: 560027',
+    phone: '+91 98864 96920',
+    email: 'info@eaglelogistics.in',
+    whatsapp: '919886496920'
+  }
   const content = pageData?.content || {}
-  
+
   const getImageUrl = (filename) => {
     if (!filename) return null
     return `http://localhost:8000/uploads/${filename}`
   }
-  
+
   const pageImage = content.image
-  
+
   // Default location: Bangalore, India
-  const defaultAddress = "Bangalore, Karnataka, India"
+  const defaultAddress = "15/2, 6th Cross, 1St Main Road, Sampangi Rama Nagar, Bangalore: 560027"
   const contactAddress = contact.address || defaultAddress
 
   const handleWhatsApp = () => {
@@ -87,44 +93,44 @@ const Contact = () => {
 
   const validateForm = () => {
     const errors = {}
-    
+
     if (!formData.name.trim()) {
       errors.name = 'Name is required'
     }
-    
+
     if (!formData.phone.trim()) {
       errors.phone = 'Phone number is required'
     } else if (!/^[+]?[(]?[0-9]{1,4}[)]?[-\s.]?[(]?[0-9]{1,4}[)]?[-\s.]?[0-9]{1,9}$/.test(formData.phone)) {
       errors.phone = 'Please enter a valid phone number'
     }
-    
+
     if (!formData.email.trim()) {
       errors.email = 'Email is required'
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
       errors.email = 'Please enter a valid email address'
     }
-    
+
     if (!formData.message.trim()) {
       errors.message = 'Message is required'
     } else if (formData.message.trim().length < 10) {
       errors.message = 'Message must be at least 10 characters'
     }
-    
+
     setFormErrors(errors)
     return Object.keys(errors).length === 0
   }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    
+
     if (!validateForm()) {
       return
     }
-    
+
     setIsSubmitting(true)
     setSubmitSuccess(false)
     setFormErrors({})
-    
+
     try {
       // Submit contact form to backend
       await publicAPI.submitContactForm({
@@ -134,17 +140,17 @@ const Contact = () => {
         message: formData.message,
         honeypot: '' // Honeypot field (hidden from users)
       })
-      
+
       setSubmitSuccess(true)
       setFormData({ name: '', phone: '', email: '', message: '' })
-      
+
       // Reset success message after 5 seconds
       setTimeout(() => {
         setSubmitSuccess(false)
       }, 5000)
     } catch (error) {
       console.error('Failed to submit contact form:', error)
-      
+
       // Handle different error types
       if (error.response?.status === 429) {
         setFormErrors({ submit: 'Too many submissions. Please try again later.' })
@@ -174,7 +180,7 @@ const Contact = () => {
   return (
     <div className="min-h-screen">
       {/* Hero Section with Media */}
-      <section 
+      <section
         className="relative py-16 lg:py-20 overflow-hidden bg-gradient-to-br from-green-200 via-emerald-100 to-teal-200"
         style={pageImage ? {
           backgroundImage: `url(${getImageUrl(pageImage)})`,
@@ -209,7 +215,7 @@ const Contact = () => {
             className="absolute bottom-0 left-0 w-96 h-96 bg-teal-300 rounded-full blur-3xl"
           ></motion.div>
         </div>
-        
+
         <Container className="relative z-10">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             {/* Left: Text Content */}
@@ -266,7 +272,7 @@ const Contact = () => {
                 >
                   <div className="absolute inset-0 bg-gradient-to-br from-green-500/20 to-teal-500/20"></div>
                 </motion.div>
-                
+
                 {/* Floating Animated Icons */}
                 <motion.div
                   animate={{
@@ -463,12 +469,12 @@ const Contact = () => {
                     >
                       <MapPin className="text-white" size={24} />
                     </motion.div>
-                     <div className="flex-1">
-                       <h3 className="text-h4 mb-2">Our Address</h3>
-                       <p className="text-body-sm text-neutral-600">
-                         {contactAddress}
-                       </p>
-                     </div>
+                    <div className="flex-1">
+                      <h3 className="text-h4 mb-2">Our Address</h3>
+                      <p className="text-body-sm text-neutral-600">
+                        {contactAddress}
+                      </p>
+                    </div>
                   </div>
                 </Card>
               </motion.div>
@@ -490,7 +496,7 @@ const Contact = () => {
                     </motion.div>
                     <div className="flex-1">
                       <h3 className="text-h4 mb-2">Phone Number</h3>
-                      <a 
+                      <a
                         href={`tel:${contact.phone || '+91-1234567890'}`}
                         className="text-body-sm text-primary-600 hover:text-primary-700 font-medium transition-colors"
                       >
@@ -519,11 +525,11 @@ const Contact = () => {
                     </motion.div>
                     <div className="flex-1">
                       <h3 className="text-h4 mb-2">Email Address</h3>
-                      <a 
-                        href={`mailto:${contact.email || 'info@logismart.com'}`}
+                      <a
+                        href={`mailto:${contact.email || 'info@eaglelogistics.com'}`}
                         className="text-body-sm text-primary-600 hover:text-primary-700 font-medium transition-colors"
                       >
-                        {contact.email || "info@logismart.com"}
+                        {contact.email || "info@eaglelogistics.com"}
                       </a>
                       <p className="text-xs text-neutral-500 mt-1">We'll respond within 24 hours</p>
                     </div>
@@ -635,7 +641,7 @@ const Contact = () => {
             <Card padding="none" className="overflow-hidden shadow-xl">
               {contact.google_maps_embed ? (
                 // If custom embed code (iframe HTML) is provided, use it directly
-                <div 
+                <div
                   className="w-full h-full min-h-[450px]"
                   dangerouslySetInnerHTML={{ __html: contact.google_maps_embed }}
                 />
@@ -652,20 +658,20 @@ const Contact = () => {
                   className="w-full"
                   title="Office Location"
                 />
-               ) : (
-                 // Generate embed from address (defaults to Bangalore, India if no address configured)
-                 <iframe
-                   src={`https://www.google.com/maps?q=${encodeURIComponent(contactAddress)}&output=embed`}
-                   width="100%"
-                   height="450"
-                   style={{ border: 0 }}
-                   allowFullScreen
-                   loading="lazy"
-                   referrerPolicy="no-referrer-when-downgrade"
-                   className="w-full"
-                   title="Office Location"
-                 />
-               )}
+              ) : (
+                // Generate embed from address (defaults to Bangalore, India if no address configured)
+                <iframe
+                  src={`https://www.google.com/maps?q=${encodeURIComponent(contactAddress)}&output=embed`}
+                  width="100%"
+                  height="450"
+                  style={{ border: 0 }}
+                  allowFullScreen
+                  loading="lazy"
+                  referrerPolicy="no-referrer-when-downgrade"
+                  className="w-full"
+                  title="Office Location"
+                />
+              )}
             </Card>
           </motion.div>
         </Container>

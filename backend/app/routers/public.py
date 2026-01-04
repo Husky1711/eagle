@@ -6,10 +6,12 @@ from fastapi.responses import Response, FileResponse
 from app.utils.json_handler import JSONHandler
 from app.models.content import PricingCalculate, PricingResult
 from app.models.contact import ContactSubmission, ContactResponse
+from app.models.chat import ChatRequest, ChatResponse
 from app.utils.validators import validate_weight, validate_distance
 from app.config import settings
 from app.middleware import rate_limit_contact
 from app.services.email_service import send_contact_form_email, send_acknowledgment_email
+from app.services.chat_service import chat_service
 from app.utils.logger import logger
 from typing import List
 import json
@@ -44,41 +46,131 @@ async def get_page(page_id: str):
 
 
 @router.get("/couriers")
-async def get_couriers():
+async def get_couriers(request: Request):
     """Get active couriers"""
+    # SECURITY: Rate limiting
+    from app.middleware.rate_limiter import rate_limit_public_api
+    is_allowed, remaining, reset_after = rate_limit_public_api(request, "couriers")
+    if not is_allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Rate limit exceeded",
+            headers={
+                "X-RateLimit-Remaining": str(remaining),
+                "X-RateLimit-Reset-After": str(reset_after)
+            }
+        )
+    
     couriers = json_handler.read_list("couriers.json")
     active_couriers = [c for c in couriers if c.get("active", True)]
     
     # Sort by display_order
     active_couriers.sort(key=lambda x: x.get("display_order", 999))
     
-    return active_couriers
+    # SECURITY: Filter sensitive data
+    from app.utils.data_filter import data_filter
+    filtered_couriers = data_filter.filter_list(active_couriers, data_filter.filter_courier_public)
+    
+    # Return with rate limit headers
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        content=filtered_couriers,
+        headers={
+            "X-RateLimit-Remaining": str(remaining),
+            "X-RateLimit-Reset-After": str(reset_after)
+        }
+    )
+
+
+@router.get("/destinations", response_model=List[str])
+async def get_destinations(request: Request):
+    """Get available destinations (zones) for pricing"""
+    # SECURITY: Rate limiting
+    from app.middleware.rate_limiter import rate_limit_public_api
+    is_allowed, remaining, reset_after = rate_limit_public_api(request, "destinations")
+    if not is_allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Rate limit exceeded",
+            headers={
+                "X-RateLimit-Remaining": str(remaining),
+                "X-RateLimit-Reset-After": str(reset_after)
+            }
+        )
+    
+    pricing_rules = json_handler.read_list("pricing_rules.json")
+    
+    # Extract unique zone names from zone-based rules
+    destinations = set()
+    for rule in pricing_rules:
+        if rule.get("active", True) and rule.get("pricing_type") == "zone":
+            zone_name = rule.get("zone_name")
+            if zone_name:
+                destinations.add(zone_name)
+    
+    # Return with rate limit headers
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        content=sorted(list(destinations)),
+        headers={
+            "X-RateLimit-Remaining": str(remaining),
+            "X-RateLimit-Reset-After": str(reset_after)
+        }
+    )
 
 
 @router.post("/pricing/calculate", response_model=List[PricingResult])
-async def calculate_pricing(request: PricingCalculate):
-    """Calculate pricing for given weight and distance"""
+async def calculate_pricing(request: Request, pricing_request: PricingCalculate):
+    """Calculate pricing for given weight and destination OR distance"""
+    # SECURITY: Request validation (check BEFORE rate limiting)
+    from app.middleware.request_limits import request_limits
+    items = pricing_request.items if hasattr(pricing_request, 'items') else [pricing_request]
+    is_valid, error_msg = request_limits.validate_pricing_request(items)
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_msg
+        )
     
-    # Validate inputs
-    weight_valid, weight_error = validate_weight(request.weight)
+    # SECURITY: Rate limiting (after validation)
+    from app.middleware.rate_limiter import rate_limit_pricing_calc
+    is_allowed, remaining, reset_after = rate_limit_pricing_calc(request)
+    if not is_allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Rate limit exceeded for pricing calculator",
+            headers={
+                "X-RateLimit-Remaining": str(remaining),
+                "X-RateLimit-Reset-After": str(reset_after)
+            }
+        )
+    from app.middleware.request_limits import request_limits
+    items = pricing_request.items if hasattr(pricing_request, 'items') else [pricing_request]
+    is_valid, error_msg = request_limits.validate_pricing_request(items)
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_msg
+        )
+    
+    # Validate weight
+    weight_valid, weight_error = validate_weight(pricing_request.weight)
     if not weight_valid:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=weight_error
         )
     
-    distance_valid, distance_error = validate_distance(request.distance)
-    if not distance_valid:
+    # Validate inputs: either distance or destination must be provided
+    if not pricing_request.distance and not pricing_request.destination:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=distance_error
+            detail="Either distance or destination is required"
         )
     
-    # Load pricing rules
+    # Load data
     pricing_rules = json_handler.read_list("pricing_rules.json")
     couriers = json_handler.read_list("couriers.json")
-    
-    # Create courier lookup
     courier_lookup = {c["id"]: c for c in couriers if c.get("active", True)}
     
     results = []
@@ -91,64 +183,108 @@ async def calculate_pricing(request: PricingCalculate):
         courier_id = rule.get("courier")
         if courier_id not in courier_lookup:
             continue
-        
+            
+        # Check weight range
         weight_range = rule.get("weight_range", {})
         weight_min = weight_range.get("min", 0)
         weight_max = weight_range.get("max", float('inf'))
         
-        # Check if weight matches
-        if not (weight_min <= request.weight <= weight_max):
+        if not (weight_min <= pricing_request.weight <= weight_max):
             continue
-        
-        # Find matching distance zone
-        distance_zones = rule.get("distance_zones", [])
-        matching_zone = None
-        
-        for zone in distance_zones:
-            zone_max = zone.get("max_distance", float('inf'))
-            if request.distance <= zone_max:
-                matching_zone = zone
-                break
-        
-        if not matching_zone:
-            continue
-        
-        # Calculate price
-        base_price = matching_zone.get("base_price", 0)
-        price_per_kg = matching_zone.get("price_per_kg", 0)
-        total_price = base_price + (request.weight * price_per_kg)
-        
-        # Build breakdown
-        breakdown = {
-            "base_price": base_price,
-            "weight": request.weight,
-            "price_per_kg": price_per_kg,
-            "weight_cost": request.weight * price_per_kg,
-            "distance": request.distance,
-            "zone": matching_zone.get("zone", "unknown")
-        }
-        
-        courier_info = courier_lookup[courier_id]
-        
-        results.append(PricingResult(
-            courier=courier_id,
-            courier_name=courier_info.get("name", courier_id),
-            price=round(total_price, 2),
-            breakdown=breakdown,
-            estimated_delivery=matching_zone.get("estimated_delivery")
-        ))
+            
+        # LOGIC BRANCH 1: Destination-based (Zone) Pricing
+        if pricing_request.destination and rule.get("pricing_type") == "zone":
+            if rule.get("zone_name") == pricing_request.destination:
+                price = rule.get("price", 0)
+                
+                # Check optional service type match
+                service_type = rule.get("custom_fields", {}).get("service_type")
+                
+                # Build breakdown
+                breakdown = {
+                    "base_price": price,
+                    "weight": pricing_request.weight,
+                    "price_per_kg": 0, # Flat rate for zone
+                    "weight_cost": 0,
+                    "distance": 0,
+                    "zone": pricing_request.destination
+                }
+                
+                courier_info = courier_lookup[courier_id]
+                courier_name = courier_info.get("name", courier_id)
+                
+                # Append service type to name if available
+                display_name = courier_name
+                if service_type:
+                    display_name = f"{courier_name} - {service_type}"
+                
+                results.append(PricingResult(
+                    courier=courier_id,
+                    courier_name=display_name,
+                    price=round(price, 2),
+                    breakdown=breakdown,
+                    estimated_delivery=rule.get("custom_fields", {}).get("estimated_delivery")
+                ))
+                
+        # LOGIC BRANCH 2: Distance-based Pricing (Legacy)
+        elif pricing_request.distance and pricing_request.distance > 0 and rule.get("pricing_type") != "zone":
+            if rule.get("distance_zones"):
+                distance_valid, _ = validate_distance(pricing_request.distance)
+                if not distance_valid: 
+                     continue
+
+                # Find matching distance zone
+                matching_zone = None
+                for zone in rule.get("distance_zones", []):
+                    zone_max = zone.get("max_distance", float('inf'))
+                    if pricing_request.distance <= zone_max:
+                        matching_zone = zone
+                        break
+                
+                if matching_zone:
+                    base_price = matching_zone.get("base_price", 0)
+                    price_per_kg = matching_zone.get("price_per_kg", 0)
+                    total_price = base_price + (pricing_request.weight * price_per_kg)
+                    
+                    breakdown = {
+                        "base_price": base_price,
+                        "weight": pricing_request.weight,
+                        "price_per_kg": price_per_kg,
+                        "weight_cost": pricing_request.weight * price_per_kg,
+                        "distance": pricing_request.distance,
+                        "zone": matching_zone.get("zone", "distance_zone")
+                    }
+                    
+                    courier_info = courier_lookup[courier_id]
+                    
+                    results.append(PricingResult(
+                        courier=courier_id,
+                        courier_name=courier_info.get("name", courier_id),
+                        price=round(total_price, 2),
+                        breakdown=breakdown,
+                        estimated_delivery=matching_zone.get("estimated_delivery")
+                    ))
     
     # Sort by price (best first)
     results.sort(key=lambda x: x.price)
     
     # Update analytics
-    analytics = json_handler.read("analytics.json")
-    calculator_count = analytics.get("calculator_usage_count", 0)
-    analytics["calculator_usage_count"] = calculator_count + 1
-    json_handler.write("analytics.json", analytics)
+    try:
+        analytics = json_handler.read("analytics.json")
+        analytics["calculator_usage_count"] = analytics.get("calculator_usage_count", 0) + 1
+        json_handler.write("analytics.json", analytics)
+    except Exception:
+        pass # Ignore analytics errors
     
-    # Return top 3
-    return results[:3]
+    # Return with rate limit headers
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        content=[r.model_dump() for r in results],
+        headers={
+            "X-RateLimit-Remaining": str(remaining),
+            "X-RateLimit-Reset-After": str(reset_after)
+        }
+    )
 
 
 @router.get("/tracking/{courier_id}/{tracking_id}")
@@ -290,8 +426,35 @@ async def get_courier_logo(courier_name: str):
 
 
 @router.get("/uploads/{filename:path}")
-async def get_uploaded_image(filename: str):
+async def get_uploaded_image(request: Request, filename: str):
     """Serve uploaded images via API (more reliable than static files)"""
+    # SECURITY: Rate limiting for image access
+    from app.middleware.rate_limiter import rate_limit_image_access
+    is_allowed, remaining, reset_after = rate_limit_image_access(request)
+    if not is_allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Rate limit exceeded for image access",
+            headers={
+                "X-RateLimit-Remaining": str(remaining),
+                "X-RateLimit-Reset-After": str(reset_after)
+            }
+        )
+    
+    # SECURITY: Hotlink protection and access control
+    from app.middleware.image_security import image_security
+    is_allowed, error_msg = image_security.check_image_access(
+        request=request,
+        filename=filename,
+        require_auth=False,  # Set to True for private images
+        auth_token=request.query_params.get("token")
+    )
+    if not is_allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=error_msg or "Access denied"
+        )
+    
     from app.utils.logger import logger
     import os
     from urllib.parse import unquote
@@ -375,18 +538,26 @@ async def get_uploaded_image(filename: str):
         file_size = len(file_content)
         logger.info(f"Serving image: filename={filename}, path={file_path}, content_type={content_type}, size={file_size} bytes, ext={ext}")
         
+        # SECURITY: CORS headers (restrictive)
+        from app.config import settings
+        allowed_origins = settings.cors_origins_list
+        origin = request.headers.get("origin")
+        cors_origin = origin if origin in allowed_origins else allowed_origins[0] if allowed_origins else None
+        
         # Return Response with explicit content and headers
         # This works better with proxies than FileResponse
         # For JPG files, ensure content-type is explicitly set
         headers = {
-            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Origin": cors_origin or "*",  # Restrictive CORS
             "Access-Control-Allow-Methods": "GET, OPTIONS, HEAD",
             "Access-Control-Allow-Headers": "*",
             "Access-Control-Expose-Headers": "Content-Type, Content-Length",
-            "Cache-Control": "public, max-age=31536000",  # Cache for 1 year
+            "Cache-Control": "public, max-age=86400",  # Reduced to 1 day (was 1 year)
             "Content-Length": str(file_size),
             "Content-Disposition": f'inline; filename="{filename}"',
-            "X-Content-Type-Options": "nosniff"
+            "X-Content-Type-Options": "nosniff",
+            "X-Frame-Options": "SAMEORIGIN",  # Prevent clickjacking
+            "Referrer-Policy": "strict-origin-when-cross-origin"  # Control referrer
         }
         
         # Explicitly set content-type for JPG files to ensure browser compatibility
@@ -419,6 +590,92 @@ async def options_uploaded_image(filename: str):
             "Access-Control-Allow-Headers": "*",
         }
     )
+
+
+@router.post("/chat", response_model=ChatResponse)
+async def chat_with_bot(request: Request, chat_request: ChatRequest):
+    """
+    Chat endpoint - Get AI responses about the website and services
+    Uses GROQ LLM (Llama 3.1 8B Instant) to answer questions
+    """
+    # SECURITY: Request size validation (check BEFORE rate limiting to avoid wasting quota)
+    from app.middleware.request_limits import request_limits
+    is_valid, error_msg = request_limits.validate_chat_request(
+        chat_request.message,
+        chat_request.conversation_history
+    )
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_msg
+        )
+    
+    # SECURITY: Rate limiting (after validation)
+    from app.middleware.rate_limiter import rate_limit_chat
+    is_allowed, remaining, reset_after = rate_limit_chat(request)
+    if not is_allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Rate limit exceeded. Please try again in {reset_after} seconds.",
+            headers={
+                "X-RateLimit-Remaining": str(remaining),
+                "X-RateLimit-Reset-After": str(reset_after)
+            }
+        )
+    from app.middleware.request_limits import request_limits
+    is_valid, error_msg = request_limits.validate_chat_request(
+        chat_request.message,
+        chat_request.conversation_history
+    )
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_msg
+        )
+    
+    try:
+        # Convert conversation history if provided
+        history = None
+        if chat_request.conversation_history:
+            history = [
+                {"role": msg.role, "content": msg.content}
+                for msg in chat_request.conversation_history
+            ]
+        
+        # Get response from chat service
+        result = chat_service.get_chat_response(
+            user_message=chat_request.message,
+            conversation_history=history
+        )
+        
+        # Create response with rate limit headers
+        from fastapi.responses import JSONResponse
+        response_data = ChatResponse(
+            response=result["response"],
+            model=result.get("model", "llama-3.1-8b-instant"),
+            usage=result.get("usage")
+        )
+        
+        # Return JSONResponse with rate limit headers
+        return JSONResponse(
+            content=response_data.model_dump(),
+            headers={
+                "X-RateLimit-Remaining": str(remaining),
+                "X-RateLimit-Reset-After": str(reset_after)
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in chat endpoint: {str(e)}", exc_info=True)
+        # SECURITY: Sanitize error messages
+        from app.utils.data_filter import data_filter
+        sanitized_error = data_filter.sanitize_error_message(str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while processing your request."
+        )
 
 
 @router.post("/contact", response_model=ContactResponse, status_code=status.HTTP_200_OK)

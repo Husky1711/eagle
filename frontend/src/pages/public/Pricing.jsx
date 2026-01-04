@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
-import { Calculator, CheckCircle, Loader2, Package, MapPin, DollarSign, Clock } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Calculator, CheckCircle, Loader2, Package, MapPin, DollarSign, Clock, Globe } from 'lucide-react'
 import Container from '../../components/common/Container'
 import Button from '../../components/common/Button'
 import Card from '../../components/common/Card'
@@ -10,21 +10,26 @@ import { publicAPI } from '../../services/api'
 const Pricing = () => {
   const [pageData, setPageData] = useState(null)
   const [weight, setWeight] = useState('')
-  const [distance, setDistance] = useState('')
+  const [destinations, setDestinations] = useState([])
+  const [selectedDestination, setSelectedDestination] = useState('')
   const [results, setResults] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    const fetchPageData = async () => {
+    const fetchData = async () => {
       try {
-        const response = await publicAPI.getPage('pricing')
-        setPageData(response.data)
+        const [pageRes, destRes] = await Promise.all([
+          publicAPI.getPage('pricing'),
+          publicAPI.getDestinations()
+        ])
+        setPageData(pageRes.data)
+        setDestinations(destRes.data || [])
       } catch (error) {
-        console.error('Failed to fetch pricing page data:', error)
+        console.error('Failed to fetch pricing data:', error)
       }
     }
-    fetchPageData()
+    fetchData()
   }, [])
 
   const handleCalculate = async (e) => {
@@ -33,15 +38,14 @@ const Pricing = () => {
     setResults(null)
 
     const weightNum = parseFloat(weight)
-    const distanceNum = parseFloat(distance)
 
     if (!weightNum || weightNum <= 0) {
       setError('Please enter a valid weight (greater than 0)')
       return
     }
 
-    if (!distanceNum || distanceNum <= 0) {
-      setError('Please enter a valid distance (greater than 0)')
+    if (!selectedDestination) {
+      setError('Please select a destination')
       return
     }
 
@@ -49,7 +53,7 @@ const Pricing = () => {
     try {
       const response = await publicAPI.calculatePricing({
         weight: weightNum,
-        distance: distanceNum,
+        destination: selectedDestination,
       })
       setResults(response.data)
     } catch (err) {
@@ -60,18 +64,18 @@ const Pricing = () => {
   }
 
   const content = pageData?.content || {}
-  
+
   const getImageUrl = (filename) => {
     if (!filename) return null
     return `http://localhost:8000/uploads/${filename}`
   }
-  
+
   const pageImage = content.image
 
   return (
     <div className="min-h-screen">
       {/* Hero Section with Media - Matching Other Pages */}
-      <section 
+      <section
         className="relative py-16 lg:py-20 overflow-hidden bg-gradient-to-br from-blue-200 via-blue-100 to-indigo-200"
         style={pageImage ? {
           backgroundImage: `url(${getImageUrl(pageImage)})`,
@@ -106,7 +110,7 @@ const Pricing = () => {
             className="absolute bottom-0 left-0 w-96 h-96 bg-secondary-300 rounded-full blur-3xl"
           ></motion.div>
         </div>
-        
+
         <Container className="relative z-10">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             {/* Left: Text Content */}
@@ -129,7 +133,7 @@ const Pricing = () => {
                 transition={{ duration: 0.6, delay: 0.3 }}
                 className="text-display mb-4 text-neutral-900"
               >
-                {content.title || "Calculate Your Shipping Cost"}
+                {content.title || "Get Your Shipping Quote"}
               </motion.h1>
               <motion.p
                 initial={{ opacity: 0, y: 20 }}
@@ -137,7 +141,7 @@ const Pricing = () => {
                 transition={{ duration: 0.6, delay: 0.4 }}
                 className="text-body-lg text-neutral-700 max-w-xl"
               >
-                {content.subtitle || "Enter your parcel details to get the best rates from multiple courier partners"}
+                {content.subtitle || "Select your destination and package weight to instantly compare exact rates from our premium courier partners."}
               </motion.p>
             </motion.div>
 
@@ -156,14 +160,14 @@ const Pricing = () => {
                   transition={{ duration: 0.8, delay: 0.4 }}
                   className="aspect-square rounded-2xl overflow-hidden shadow-xl"
                   style={{
-                    backgroundImage: 'url(https://images.unsplash.com/photo-1607082349566-187342175e2f?w=600&h=600&fit=crop)',
+                    backgroundImage: 'url(https://images.unsplash.com/photo-1578575437130-527eed3abbec?w=600&h=600&fit=crop)',
                     backgroundSize: 'cover',
                     backgroundPosition: 'center'
                   }}
                 >
                   <div className="absolute inset-0 bg-gradient-to-br from-primary-500/20 to-secondary-500/20"></div>
                 </motion.div>
-                
+
                 {/* Floating Animated Icons */}
                 <motion.div
                   animate={{
@@ -177,7 +181,7 @@ const Pricing = () => {
                   }}
                   className="absolute -top-4 -right-4 bg-white p-3 rounded-full shadow-lg"
                 >
-                  <Package className="text-primary-500" size={24} />
+                  <Globe className="text-primary-500" size={24} />
                 </motion.div>
                 <motion.div
                   animate={{
@@ -194,21 +198,6 @@ const Pricing = () => {
                 >
                   <DollarSign className="text-secondary-500" size={24} />
                 </motion.div>
-                <motion.div
-                  animate={{
-                    scale: [1, 1.1, 1],
-                    rotate: [0, 10, 0],
-                  }}
-                  transition={{
-                    duration: 2.5,
-                    repeat: Infinity,
-                    ease: "easeInOut",
-                    delay: 0.5
-                  }}
-                  className="absolute top-1/2 -right-8 bg-white p-3 rounded-full shadow-lg"
-                >
-                  <MapPin className="text-indigo-500" size={24} />
-                </motion.div>
               </div>
             </motion.div>
           </div>
@@ -220,7 +209,7 @@ const Pricing = () => {
         <Container>
           <div className="max-w-6xl mx-auto">
             <div className="grid lg:grid-cols-2 gap-12">
-              {/* Input Form - Improved Design */}
+              {/* Input Form */}
               <motion.div
                 initial={{ opacity: 0, x: -30 }}
                 whileInView={{ opacity: 1, x: 0 }}
@@ -245,67 +234,83 @@ const Pricing = () => {
                       >
                         <Package className="text-white" size={28} />
                       </motion.div>
-                      <h2 className="text-h3 font-semibold">Parcel Details</h2>
+                      <h2 className="text-h3 font-semibold">Quote Calculator</h2>
                     </motion.div>
-                  <form onSubmit={handleCalculate} className="space-y-6">
-                    <Input
-                      label={content.weightLabel || "Weight (kg)"}
-                      type="number"
-                      step="0.1"
-                      min="0.1"
-                      value={weight}
-                      onChange={(e) => setWeight(e.target.value)}
-                      placeholder="e.g., 2.5"
-                      required
-                    />
+                    <form onSubmit={handleCalculate} className="space-y-6">
+                      <Input
+                        label={content.weightLabel || "Package Weight (kg)"}
+                        type="number"
+                        step="0.1"
+                        min="0.1"
+                        value={weight}
+                        onChange={(e) => setWeight(e.target.value)}
+                        placeholder="e.g., 2.5"
+                        required
+                      />
 
-                    <Input
-                      label={content.distanceLabel || "Distance (km)"}
-                      type="number"
-                      step="1"
-                      min="1"
-                      value={distance}
-                      onChange={(e) => setDistance(e.target.value)}
-                      placeholder="e.g., 200"
-                      required
-                    />
-
-                    {error && (
-                      <div className="bg-error-50 border border-error-200 text-error-600 px-3 py-2 rounded-lg text-sm">
-                        {error}
+                      <div className="space-y-2">
+                        <label className="block text-sm font-medium text-neutral-700">
+                          {content.destinationLabel || "Destination"}
+                        </label>
+                        <div className="relative">
+                          <Globe className="absolute left-4 top-3 text-neutral-400" size={20} />
+                          <select
+                            value={selectedDestination}
+                            onChange={(e) => setSelectedDestination(e.target.value)}
+                            className="w-full pl-12 pr-4 py-2.5 bg-white border border-neutral-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-shadow appearance-none"
+                            required
+                          >
+                            <option value="">Select Country / Zone</option>
+                            {destinations.map((dest, idx) => (
+                              <option key={idx} value={dest}>
+                                {dest}
+                              </option>
+                            ))}
+                          </select>
+                          <div className="absolute right-4 top-3.5 pointer-events-none">
+                            <svg width="12" height="8" viewBox="0 0 12 8" fill="none" xmlns="http://www.w3.org/2000/svg">
+                              <path d="M1 1.5L6 6.5L11 1.5" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          </div>
+                        </div>
                       </div>
-                    )}
 
-                    <motion.div
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                    >
-                      <Button
-                        type="submit"
-                        variant="primary"
-                        size="lg"
-                        disabled={loading}
-                        className="w-full"
+                      {error && (
+                        <div className="bg-error-50 border border-error-200 text-error-600 px-3 py-2 rounded-lg text-sm flex items-center gap-2">
+                          <span className="text-xl">!</span> {error}
+                        </div>
+                      )}
+
+                      <motion.div
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
                       >
-                        {loading ? (
-                          <>
-                            <Loader2 className="inline-block mr-2 animate-spin" size={20} />
-                            Calculating...
-                          </>
-                        ) : (
-                          <>
-                            {content.calculateButton || "Calculate Price"}
-                            <Calculator className="inline-block ml-2" size={20} />
-                          </>
-                        )}
-                      </Button>
-                    </motion.div>
-                  </form>
+                        <Button
+                          type="submit"
+                          variant="primary"
+                          size="lg"
+                          disabled={loading}
+                          className="w-full"
+                        >
+                          {loading ? (
+                            <>
+                              <Loader2 className="inline-block mr-2 animate-spin" size={20} />
+                              Getting Quotes...
+                            </>
+                          ) : (
+                            <>
+                              {content.calculateButton || "View Shipping Rates"}
+                              <Calculator className="inline-block ml-2" size={20} />
+                            </>
+                          )}
+                        </Button>
+                      </motion.div>
+                    </form>
                   </Card>
                 </motion.div>
               </motion.div>
 
-              {/* Results - Improved Grid Layout */}
+              {/* Results */}
               <motion.div
                 initial={{ opacity: 0, x: 30 }}
                 whileInView={{ opacity: 1, x: 0 }}
@@ -335,17 +340,17 @@ const Pricing = () => {
                     <div className="space-y-4">
                       {results.slice(0, 3).map((result, index) => (
                         <motion.div
-                          key={result.courier}
+                          key={index}
                           initial={{ opacity: 0, scale: 0.95, y: 20 }}
                           whileInView={{ opacity: 1, scale: 1, y: 0 }}
                           viewport={{ once: true }}
-                          transition={{ 
-                            duration: 0.5, 
+                          transition={{
+                            duration: 0.5,
                             delay: index * 0.1,
                             type: "spring",
                             stiffness: 100
                           }}
-                          whileHover={{ 
+                          whileHover={{
                             y: -6,
                             transition: { duration: 0.2 }
                           }}
@@ -355,7 +360,7 @@ const Pricing = () => {
                               <motion.div
                                 initial={{ scale: 0, rotate: -180 }}
                                 animate={{ scale: 1, rotate: 0 }}
-                                transition={{ 
+                                transition={{
                                   type: "spring",
                                   stiffness: 200,
                                   delay: 0.5
@@ -376,33 +381,31 @@ const Pricing = () => {
                                 >
                                   {result.courier_name}
                                 </motion.h3>
-                                {result.estimated_delivery && (
-                                  <motion.p
-                                    initial={{ opacity: 0, x: -10 }}
-                                    whileInView={{ opacity: 1, x: 0 }}
-                                    viewport={{ once: true }}
-                                    transition={{ delay: index * 0.1 + 0.3 }}
-                                    className="text-body-sm text-neutral-600 flex items-center gap-2"
-                                  >
-                                    <motion.span
-                                      animate={{ rotate: [0, 360] }}
-                                      transition={{ 
-                                        duration: 2,
-                                        repeat: Infinity,
-                                        ease: "linear"
-                                      }}
+
+                                <div className="space-y-1">
+                                  {result.estimated_delivery && (
+                                    <motion.p
+                                      initial={{ opacity: 0, x: -10 }}
+                                      whileInView={{ opacity: 1, x: 0 }}
+                                      viewport={{ once: true }}
+                                      transition={{ delay: index * 0.1 + 0.3 }}
+                                      className="text-body-sm text-neutral-600 flex items-center gap-2"
                                     >
-                                      <Clock size={16} className="text-primary-500" />
-                                    </motion.span>
-                                    {result.estimated_delivery}
-                                  </motion.p>
-                                )}
+                                      <Clock size={14} className="text-primary-500" />
+                                      {result.estimated_delivery}
+                                    </motion.p>
+                                  )}
+                                  <p className="text-body-sm text-neutral-600 flex items-center gap-2">
+                                    <Globe size={14} className="text-secondary-500" />
+                                    Zone: <span className="font-semibold text-neutral-800">{result.breakdown.zone}</span>
+                                  </p>
+                                </div>
                               </div>
                               <motion.div
                                 initial={{ opacity: 0, scale: 0.8 }}
                                 whileInView={{ opacity: 1, scale: 1 }}
                                 viewport={{ once: true }}
-                                transition={{ 
+                                transition={{
                                   delay: index * 0.1 + 0.4,
                                   type: "spring",
                                   stiffness: 150
@@ -415,22 +418,6 @@ const Pricing = () => {
                                 <p className="text-body-sm text-neutral-500">Total shipping cost</p>
                               </motion.div>
                             </div>
-
-                            {/* Improved Breakdown */}
-                            <div className="pt-4 border-t border-neutral-200 space-y-2">
-                              <div className="flex justify-between text-body-sm">
-                                <span className="text-neutral-600">Base Price:</span>
-                                <span className="font-semibold text-neutral-900">₹{result.breakdown.base_price}</span>
-                              </div>
-                              <div className="flex justify-between text-body-sm">
-                                <span className="text-neutral-600">Weight ({result.breakdown.weight}kg):</span>
-                                <span className="font-semibold text-neutral-900">₹{result.breakdown.weight_cost.toFixed(2)}</span>
-                              </div>
-                              <div className="flex justify-between text-body-sm">
-                                <span className="text-neutral-600">Distance Zone:</span>
-                                <span className="font-semibold text-neutral-900 capitalize">{result.breakdown.zone}</span>
-                              </div>
-                            </div>
                           </Card>
                         </motion.div>
                       ))}
@@ -438,10 +425,24 @@ const Pricing = () => {
                   </div>
                 ) : results && results.length === 0 ? (
                   <Card>
-                    <div className="text-center py-8">
-                      <Package className="mx-auto text-neutral-300 mb-3" size={40} />
-                      <p className="text-neutral-600 text-sm">No pricing options available</p>
-                      <p className="text-xs text-neutral-500 mt-1">Try different weight or distance values</p>
+                    <div className="text-center py-12">
+                      <div className="w-16 h-16 bg-neutral-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Package className="text-neutral-300" size={32} />
+                      </div>
+                      <h3 className="text-lg font-semibold text-neutral-900 mb-2">No quotes available</h3>
+                      <p className="text-neutral-600 text-sm max-w-xs mx-auto">
+                        We couldn't find any shipping options for {selectedDestination} with weight {weight}kg.
+                      </p>
+                      <button
+                        onClick={() => {
+                          setWeight('')
+                          setSelectedDestination('')
+                          setResults(null)
+                        }}
+                        className="mt-6 text-primary-600 font-medium hover:underline"
+                      >
+                        Try different parameters
+                      </button>
                     </div>
                   </Card>
                 ) : (
@@ -450,8 +451,8 @@ const Pricing = () => {
                     animate={{ opacity: 1, scale: 1 }}
                     transition={{ duration: 0.5 }}
                   >
-                    <Card className="bg-gradient-to-br from-neutral-50 to-neutral-100">
-                      <div className="text-center py-10">
+                    <Card className="bg-gradient-to-br from-neutral-50 to-neutral-100 h-full flex items-center justify-center min-h-[400px]">
+                      <div className="text-center p-8">
                         <motion.div
                           animate={{
                             scale: [1, 1.1, 1],
@@ -462,12 +463,13 @@ const Pricing = () => {
                             repeat: Infinity,
                             ease: "easeInOut"
                           }}
-                          className="w-16 h-16 gradient-bg rounded-full flex items-center justify-center mx-auto mb-4"
+                          className="w-20 h-20 gradient-bg rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg shadow-primary-500/20"
                         >
-                          <Calculator className="text-white" size={32} />
+                          <Calculator className="text-white" size={40} />
                         </motion.div>
-                        <p className="text-neutral-600 font-medium">Enter parcel details to see pricing</p>
-                        <p className="text-xs text-neutral-500 mt-1">Get instant quotes from multiple couriers</p>
+                        <h3 className="text-xl font-bold text-neutral-900 mb-2">Ready to ship?</h3>
+                        <p className="text-neutral-600 mb-1">Enter your package details to get</p>
+                        <p className="text-neutral-600 font-medium">instant quotes from top couriers</p>
                       </div>
                     </Card>
                   </motion.div>
@@ -504,20 +506,20 @@ const Pricing = () => {
                 initial={{ opacity: 0, y: 30 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
-                transition={{ 
-                  duration: 0.6, 
+                transition={{
+                  duration: 0.6,
                   delay: index * 0.1,
                   type: "spring",
                   stiffness: 100
                 }}
-                whileHover={{ 
+                whileHover={{
                   y: -8,
                   transition: { duration: 0.2 }
                 }}
               >
                 <Card className="text-center h-full">
                   <motion.div
-                    whileHover={{ 
+                    whileHover={{
                       scale: 1.15,
                       rotate: [0, -10, 10, 0],
                     }}

@@ -12,8 +12,23 @@ from app.models.admin import (
 )
 from app.models.content import (
     PageContent, SectionUpdate, CourierCreate, CourierUpdate,
-    PricingRuleCreate, PricingRuleUpdate, SettingsUpdate
+    PricingRuleCreate, PricingRuleUpdate, SettingsUpdate,
+    PricingImportAnalyzeResponse, ImportPreviewRequest, ImportPreviewResponse,
+    ImportExecuteRequest, ImportResult, ColumnMapping
 )
+from app.models.chat import (
+    UsageStatsResponse, UsageLogsResponse, PricingConfigResponse, PricingConfigUpdate,
+    ModelsListResponse, BulkPricingUpdate, PromptResponse, PromptUpdate,
+    PromptGenerateRequest, PromptGenerateResponse
+)
+from app.services.file_parser import file_parser
+from app.services.column_mapper import column_mapper
+from app.services.pricing_importer import pricing_importer
+from app.services.zone_detector import zone_detector
+from app.services.matrix_transformer import matrix_transformer
+from app.services.chat_usage_stats import chat_usage_stats
+from app.services.chat_pricing import chat_pricing_manager
+from app.services.chat_prompt_manager import chat_prompt_manager
 from app.config import settings
 from app.middleware import rate_limit_login
 from app.utils.admin_logger import (
@@ -21,7 +36,7 @@ from app.utils.admin_logger import (
     log_media_action, log_settings_update
 )
 from fastapi import Request
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 import uuid
 
@@ -262,6 +277,19 @@ async def get_dashboard_stats(current_admin: str = Depends(get_current_admin)):
             if last_update is None or page_dt > last_update:
                 last_update = page_dt
     
+    # Get chat usage summary (fail-safe)
+    chat_usage_today = None
+    chat_usage_week = None
+    chat_usage_month = None
+    try:
+        chat_summary = chat_usage_stats.get_summary()
+        chat_usage_today = chat_summary.get("today")
+        chat_usage_week = chat_summary.get("week")
+        chat_usage_month = chat_summary.get("month")
+    except Exception as e:
+        from app.utils.logger import logger
+        logger.error(f"Failed to get chat usage summary: {str(e)}", exc_info=True)
+    
     return DashboardStats(
         total_pages=len(pages),
         active_couriers=active_couriers,
@@ -269,7 +297,10 @@ async def get_dashboard_stats(current_admin: str = Depends(get_current_admin)):
         pricing_rules_count=len(pricing_rules),
         calculator_usage_count=analytics.get("calculator_usage_count", 0),
         tracking_redirect_count=analytics.get("tracking_redirect_count", 0),
-        last_content_update=last_update
+        last_content_update=last_update,
+        chat_usage_today=chat_usage_today,
+        chat_usage_week=chat_usage_week,
+        chat_usage_month=chat_usage_month
     )
 
 
@@ -638,6 +669,639 @@ async def delete_pricing_rule(
     log_pricing_rule_action("DELETE", rule_id, current_admin, request_id)
     
     return {"message": "Pricing rule deleted successfully"}
+
+
+# Pricing Import
+@router.post("/pricing/import/analyze", response_model=PricingImportAnalyzeResponse)
+async def analyze_import_file(
+    request: Request,
+    file: UploadFile = File(...),
+    current_admin: str = Depends(get_current_admin)
+):
+    """
+    Analyze uploaded Excel/CSV file for pricing import
+    Returns column names, sample rows, and total row count
+    """
+    try:
+        # Parse file
+        result = await file_parser.parse_file(file)
+        
+        # Detect zones
+        zone_detection = zone_detector.detect_zones(result["columns"])
+        
+        # Determine import type
+        import_type = "zone_based" if zone_detection["is_zone_based"] else "standard"
+        
+        # Generate mapping suggestions
+        mapping_suggestions = column_mapper.suggest_mappings(result["columns"])
+        
+        # Log admin action
+        request_id = getattr(request.state, "request_id", None)
+        log_pricing_rule_action(
+            action="IMPORT_ANALYZE",
+            rule_id=None,
+            user=current_admin,
+            request_id=request_id
+        )
+        
+        return PricingImportAnalyzeResponse(
+            file_id=result["file_id"],
+            columns=result["columns"],
+            sample_rows=result["sample_rows"],
+            total_rows=result["total_rows"],
+            mapping_suggestions=mapping_suggestions,
+            zone_detection=zone_detection,
+            import_type=import_type
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        from app.utils.logger import logger
+        logger.error(f"Error analyzing import file: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error analyzing file: {str(e)}"
+        )
+
+
+@router.post("/pricing/import/preview", response_model=ImportPreviewResponse)
+async def preview_import(
+    request: Request,
+    preview_data: ImportPreviewRequest,
+    current_admin: str = Depends(get_current_admin)
+):
+    """
+    Preview import with column mapping
+    Returns preview rows, validation errors, and statistics
+    """
+    try:
+        # Load file data
+        file_data = file_parser.get_file_data(preview_data.file_id)
+        if not file_data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="File data not found. Please re-upload the file."
+            )
+        rows = file_data.get("rows", [])
+        if not rows:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No data rows found in the uploaded file."
+            )
+        
+        # Validate mapping - convert ColumnMapping objects to dicts
+        mapping_dict = {}
+        for col_name, mapping in preview_data.column_mapping.items():
+            if isinstance(mapping, dict):
+                mapping_dict[col_name] = mapping
+            else:
+                # Convert ColumnMapping Pydantic model to dict
+                mapping_dict[col_name] = {
+                    "mapped_field": mapping.mapped_field,
+                    "field_type": mapping.field_type,
+                    "show_in_ui": mapping.show_in_ui,
+                    "custom_field_name": mapping.custom_field_name
+                }
+        
+        mapping_errors = column_mapper.validate_mapping(mapping_dict)
+        if mapping_errors:
+            # Format mapping errors as a user-friendly message
+            error_messages = []
+            for err in mapping_errors:
+                if isinstance(err, dict):
+                    error_messages.append(err.get("message", str(err)))
+                else:
+                    error_messages.append(str(err))
+            error_message = ". ".join(error_messages) if error_messages else "Invalid column mapping"
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_message
+            )
+        
+        # Load couriers for validation
+        couriers = json_handler.read_list("couriers.json")
+        courier_ids = {c.get("id", "").lower(): c.get("id", "") for c in couriers}
+        courier_names = {c.get("name", "").lower(): c.get("id", "") for c in couriers}
+        
+        # Load existing rules for duplicate detection
+        existing_rules = json_handler.read_list("pricing_rules.json")
+        
+        # Process rows and validate
+        preview_rows = []
+        errors = []
+        stats = {
+            "will_create": 0,
+            "will_update": 0,
+            "will_skip": 0,
+            "total_valid": 0,
+            "total_errors": 0
+        }
+        
+        # Process first 20 rows for preview
+        preview_count = min(20, len(rows))
+        
+        for row_idx, row in enumerate(rows[:preview_count]):
+            row_errors = []
+            mapped_data = {}
+            
+            # Apply mapping
+            for column_name, mapping_config in preview_data.column_mapping.items():
+                # Handle both dict and ColumnMapping object
+                if isinstance(mapping_config, dict):
+                    mapped_field = mapping_config.get("mapped_field")
+                    custom_field_name = mapping_config.get("custom_field_name")
+                else:
+                    mapped_field = mapping_config.mapped_field if hasattr(mapping_config, 'mapped_field') else None
+                    custom_field_name = mapping_config.custom_field_name if hasattr(mapping_config, 'custom_field_name') else None
+                
+                if not mapped_field or mapped_field == "":
+                    # Unmapped column - skip
+                    continue
+                
+                if mapped_field == "custom":
+                    # Custom field
+                    if column_name in row:
+                        if custom_field_name:
+                            mapped_data[f"custom_{custom_field_name}"] = row[column_name]
+                        else:
+                            mapped_data[f"custom_{column_name}"] = row[column_name]
+                    continue
+                
+                # Get value from row
+                value = row.get(column_name, "")
+                
+                # Validate based on field type
+                if mapped_field == "courier":
+                    # Validate courier exists
+                    value_lower = str(value).lower().strip()
+                    courier_id = courier_ids.get(value_lower) or courier_names.get(value_lower)
+                    if not courier_id:
+                        row_errors.append({
+                            "row": row_idx + 1,
+                            "column": column_name,
+                            "error": f"Courier '{value}' not found in system",
+                            "value": value
+                        })
+                    else:
+                        mapped_data["courier"] = courier_id
+                
+                elif mapped_field in ["weight_min", "weight_max", "distance_min", "distance_max", "price_per_kg", "base_price"]:
+                    # Validate numeric
+                    try:
+                        num_value = float(value) if value else 0
+                        if num_value < 0:
+                            row_errors.append({
+                                "row": row_idx + 1,
+                                "column": column_name,
+                                "error": f"Value must be positive, got: {value}",
+                                "value": value
+                            })
+                        else:
+                            mapped_data[mapped_field] = num_value
+                    except (ValueError, TypeError):
+                        row_errors.append({
+                            "row": row_idx + 1,
+                            "column": column_name,
+                            "error": f"Invalid number: {value}",
+                            "value": value
+                        })
+                else:
+                    mapped_data[mapped_field] = value
+            
+            # Validate required fields
+            if "courier" not in mapped_data:
+                row_errors.append({
+                    "row": row_idx + 1,
+                    "column": "courier",
+                    "error": "Courier is required",
+                    "value": ""
+                })
+            
+            if "weight_min" not in mapped_data or "weight_max" not in mapped_data:
+                row_errors.append({
+                    "row": row_idx + 1,
+                    "column": "weight",
+                    "error": "Weight min and max are required",
+                    "value": ""
+                })
+            
+            # Determine import action for stats (only if no errors)
+            if not row_errors:
+                if preview_data.import_mode == "update" or preview_data.import_mode == "update_create":
+                    # Check if rule exists
+                    courier = mapped_data.get("courier")
+                    weight_min = mapped_data.get("weight_min")
+                    weight_max = mapped_data.get("weight_max")
+                    
+                    if courier and weight_min is not None and weight_max is not None:
+                        duplicate = next((
+                            r for r in existing_rules
+                            if r.get("courier") == courier
+                            and r.get("weight_range", {}).get("min") == weight_min
+                            and r.get("weight_range", {}).get("max") == weight_max
+                        ), None)
+                        if duplicate:
+                            stats["will_update"] += 1
+                        else:
+                            stats["will_create"] += 1
+                    else:
+                        stats["will_create"] += 1
+                elif preview_data.import_mode == "skip_duplicates":
+                    # Check for duplicate
+                    courier = mapped_data.get("courier")
+                    weight_min = mapped_data.get("weight_min")
+                    weight_max = mapped_data.get("weight_max")
+                    
+                    if courier and weight_min is not None and weight_max is not None:
+                        duplicate = next((
+                            r for r in existing_rules
+                            if r.get("courier") == courier
+                            and r.get("weight_range", {}).get("min") == weight_min
+                            and r.get("weight_range", {}).get("max") == weight_max
+                        ), None)
+                        if duplicate:
+                            stats["will_skip"] += 1
+                        else:
+                            stats["will_create"] += 1
+                    else:
+                        stats["will_create"] += 1
+                else:
+                    # Default: create mode
+                    stats["will_create"] += 1
+            
+            # Add to preview
+            preview_rows.append({
+                "row_number": row_idx + 1,
+                "data": mapped_data,
+                "original_row": row,
+                "has_errors": len(row_errors) > 0
+            })
+            
+            # Add errors
+            if row_errors:
+                errors.extend(row_errors)
+                stats["total_errors"] += len(row_errors)
+            else:
+                stats["total_valid"] += 1
+        
+        # Log admin action
+        request_id = getattr(request.state, "request_id", None)
+        log_pricing_rule_action(
+            action="IMPORT_PREVIEW",
+            rule_id=None,
+            user=current_admin,
+            request_id=request_id
+        )
+        
+        return ImportPreviewResponse(
+            preview_rows=preview_rows,
+            errors=errors,
+            stats=stats
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        from app.utils.logger import logger
+        logger.error(f"Error generating import preview: {str(e)}", exc_info=True)
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating preview: {str(e)}"
+        )
+
+
+@router.post("/pricing/import/execute", response_model=ImportResult)
+async def execute_import(
+    request: Request,
+    execute_data: ImportExecuteRequest,
+    current_admin: str = Depends(get_current_admin)
+):
+    """
+    Execute the pricing import
+    Creates/updates pricing rules based on uploaded file and column mapping
+    """
+    try:
+        # Handle zone-based imports
+        if execute_data.import_type == "zone_based":
+            # Get file data
+            file_data = file_parser.get_file_data(execute_data.file_id)
+            if not file_data:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="File data not found. Please re-upload the file."
+                )
+            
+            rows = file_data.get("rows", [])
+            if not rows:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="No data rows found in the uploaded file."
+                )
+            
+            # Get zone detection from file analysis (we need to re-analyze or store it)
+            # For now, detect zones from columns
+            zone_detection = zone_detector.detect_zones(file_data.get("columns", []))
+            
+            if not zone_detection["is_zone_based"]:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Zone-based import requested but no zones detected in file."
+                )
+            
+            if not execute_data.courier:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Courier is required for zone-based imports."
+                )
+            
+            if not zone_detection["weight_column"]:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Weight column not detected. Please ensure your file has a weight column."
+                )
+            
+            # Transform matrix data
+            transformed_rules, transform_errors = matrix_transformer.transform_matrix_data(
+                rows=rows,
+                zone_columns=zone_detection["zone_columns"],
+                weight_column=zone_detection["weight_column"],
+                courier=execute_data.courier,
+                weight_conversion_method=execute_data.weight_conversion_method or "point_to_range",
+                service_type=execute_data.service_type
+            )
+            
+            # Import the transformed rules
+            result = pricing_importer.execute_zone_based_import(
+                rules=transformed_rules,
+                import_mode=execute_data.import_mode,
+                errors=transform_errors
+            )
+        else:
+            # Standard import (existing logic)
+            # Convert ColumnMapping objects to dicts
+            mapping_dict = {}
+            for col_name, mapping in execute_data.column_mapping.items():
+                if isinstance(mapping, dict):
+                    mapping_dict[col_name] = mapping
+                else:
+                    # Convert ColumnMapping Pydantic model to dict
+                    mapping_dict[col_name] = {
+                        "mapped_field": mapping.mapped_field,
+                        "field_type": mapping.field_type,
+                        "show_in_ui": mapping.show_in_ui,
+                        "custom_field_name": mapping.custom_field_name
+                    }
+            
+            # Execute import
+            result = pricing_importer.execute_import(
+                file_id=execute_data.file_id,
+                column_mapping=mapping_dict,
+                import_mode=execute_data.import_mode
+            )
+        
+        # Log admin action
+        request_id = getattr(request.state, "request_id", None)
+        log_pricing_rule_action(
+            action="IMPORT_EXECUTE",
+            rule_id=None,
+            user=current_admin,
+            request_id=request_id
+        )
+        
+        return ImportResult(
+            success_count=result["success_count"],
+            error_count=result["error_count"],
+            skipped_count=result.get("skipped_count", 0),
+            errors=result["errors"],
+            imported_rules=result["imported_rules"]
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        from app.utils.logger import logger
+        logger.error(f"Error executing import: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error executing import: {str(e)}"
+        )
+
+
+# Chat Usage API Endpoints
+@router.get("/chat/usage/stats", response_model=UsageStatsResponse)
+async def get_chat_usage_stats(
+    period: str,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_admin: str = Depends(get_current_admin)
+):
+    """
+    Get chat usage statistics for a period
+    
+    Query params:
+    - period: today|7d|15d|30d|month|custom
+    - start_date: ISO date string (required if period=custom)
+    - end_date: ISO date string (required if period=custom)
+    """
+    try:
+        return chat_usage_stats.get_stats(period, start_date, end_date)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        from app.utils.logger import logger
+        logger.error(f"Error getting chat usage stats: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error retrieving usage statistics"
+        )
+
+
+@router.get("/chat/usage/logs", response_model=UsageLogsResponse)
+async def get_chat_usage_logs(
+    page: int = 1,
+    limit: int = 50,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_admin: str = Depends(get_current_admin)
+):
+    """
+    Get paginated chat usage logs
+    
+    Query params:
+    - page: Page number (default: 1)
+    - limit: Items per page (default: 50, max: 500)
+    - start_date: Start date filter (ISO format, optional)
+    - end_date: End date filter (ISO format, optional)
+    """
+    try:
+        return chat_usage_stats.get_logs(page, limit, start_date, end_date)
+    except Exception as e:
+        from app.utils.logger import logger
+        logger.error(f"Error getting chat usage logs: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error retrieving usage logs"
+        )
+
+
+@router.get("/chat/pricing", response_model=PricingConfigResponse)
+async def get_chat_pricing(current_admin: str = Depends(get_current_admin)):
+    """Get chat pricing configuration"""
+    try:
+        pricing_config = chat_pricing_manager.get_pricing_config()
+        return PricingConfigResponse(models=pricing_config)
+    except Exception as e:
+        from app.utils.logger import logger
+        logger.error(f"Error getting chat pricing: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error retrieving pricing configuration"
+        )
+
+
+@router.put("/chat/pricing", response_model=PricingConfigResponse)
+async def update_chat_pricing(
+    pricing_update: PricingConfigUpdate,
+    current_admin: str = Depends(get_current_admin)
+):
+    """Update chat pricing configuration for a single model"""
+    try:
+        updated_config = chat_pricing_manager.update_pricing_config(
+            model=pricing_update.model,
+            input_price_per_million=pricing_update.input_price_per_million,
+            output_price_per_million=pricing_update.output_price_per_million,
+            currency=pricing_update.currency,
+            speed_tps=pricing_update.speed_tps,
+            context_window=pricing_update.context_window
+        )
+        return PricingConfigResponse(models=updated_config)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        from app.utils.logger import logger
+        logger.error(f"Error updating chat pricing: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error updating pricing configuration"
+        )
+
+
+@router.put("/chat/pricing/bulk", response_model=PricingConfigResponse)
+async def bulk_update_chat_pricing(
+    bulk_update: BulkPricingUpdate,
+    current_admin: str = Depends(get_current_admin)
+):
+    """Bulk update chat pricing configuration for multiple models"""
+    try:
+        if not bulk_update.updates:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No updates provided"
+            )
+        
+        updated_config = chat_pricing_manager.bulk_update_pricing(bulk_update.updates)
+        return PricingConfigResponse(models=updated_config)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        from app.utils.logger import logger
+        logger.error(f"Error bulk updating chat pricing: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error bulk updating pricing configuration"
+        )
+
+
+# Chat Prompt Management API Endpoints
+@router.get("/chat/prompt", response_model=PromptResponse)
+async def get_chat_prompt(current_admin: str = Depends(get_current_admin)):
+    """Get current chat prompt"""
+    try:
+        prompt_text = chat_prompt_manager.get_prompt()
+        # Get metadata
+        data = json_handler.read(settings.CHAT_PROMPT_FILE)
+        last_updated_str = data.get("metadata", {}).get("last_updated", "2024-01-15T00:00:00Z") if data else "2024-01-15T00:00:00Z"
+        last_updated = datetime.fromisoformat(last_updated_str.replace('Z', '+00:00'))
+        
+        return PromptResponse(
+            prompt=prompt_text,
+            last_updated=last_updated
+        )
+    except Exception as e:
+        from app.utils.logger import logger
+        logger.error(f"Error getting chat prompt: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error retrieving chat prompt"
+        )
+
+
+@router.put("/chat/prompt", response_model=PromptResponse)
+async def update_chat_prompt(
+    prompt_update: PromptUpdate,
+    current_admin: str = Depends(get_current_admin)
+):
+    """Update chat prompt"""
+    try:
+        updated_data = chat_prompt_manager.update_prompt(
+            prompt_text=prompt_update.prompt,
+            updated_by=current_admin
+        )
+        
+        last_updated_str = updated_data.get("metadata", {}).get("last_updated", "2024-01-15T00:00:00Z")
+        last_updated = datetime.fromisoformat(last_updated_str.replace('Z', '+00:00'))
+        
+        return PromptResponse(
+            prompt=updated_data["prompt"],
+            last_updated=last_updated
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        from app.utils.logger import logger
+        logger.error(f"Error updating chat prompt: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error updating chat prompt"
+        )
+
+
+@router.post("/chat/prompt/generate", response_model=PromptGenerateResponse)
+async def generate_chat_prompt(
+    generate_request: PromptGenerateRequest,
+    current_admin: str = Depends(get_current_admin)
+):
+    """Generate enhanced prompt from raw input text using LLM"""
+    try:
+        generated_prompt = chat_prompt_manager.generate_prompt(generate_request.input_text)
+        
+        return PromptGenerateResponse(prompt=generated_prompt)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        from app.utils.logger import logger
+        logger.error(f"Error generating chat prompt: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error generating chat prompt"
+        )
 
 
 # Settings Management

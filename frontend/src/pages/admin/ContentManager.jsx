@@ -11,7 +11,8 @@ import {
   Truck,
   Info,
   Mail,
-  Home
+  Home,
+  Globe
 } from 'lucide-react'
 import Container from '../../components/common/Container'
 import Button from '../../components/common/Button'
@@ -61,6 +62,12 @@ const ContentManager = () => {
       name: 'Tracking Page',
       description: 'Tracking page content and labels',
       icon: Truck,
+      category: 'primary'
+    },
+    services: {
+      name: 'Services Page',
+      description: 'Service offerings (Personal vs Commercial)',
+      icon: Globe,
       category: 'primary'
     },
     about: {

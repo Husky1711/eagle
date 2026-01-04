@@ -4,6 +4,7 @@ Admin-related Pydantic models
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 from datetime import datetime
+from app.models.chat import PeriodSummary
 
 
 class AdminLogin(BaseModel):
@@ -28,6 +29,9 @@ class DashboardStats(BaseModel):
     calculator_usage_count: int
     tracking_redirect_count: int
     last_content_update: Optional[datetime] = None
+    chat_usage_today: Optional[PeriodSummary] = None
+    chat_usage_week: Optional[PeriodSummary] = None
+    chat_usage_month: Optional[PeriodSummary] = None
 
 
 class ProfileUpdate(BaseModel):

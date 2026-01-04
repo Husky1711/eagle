@@ -231,7 +231,7 @@ const Settings = () => {
                           label="Site Name"
                           value={settings.site?.name || ''}
                           onChange={(e) => updateSetting('site.name', e.target.value)}
-                          placeholder="e.g. LogiSmart"
+                          placeholder="e.g. Eagle Logistics"
                         />
                         <Input
                           label="Site URL"
