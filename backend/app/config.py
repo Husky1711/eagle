@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
     
     # CORS
+    # Default: localhost for development
+    # For production (Render): Set CORS_ORIGINS environment variable to your frontend URL
+    # Example: https://your-frontend.onrender.com
     CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
     
     @property
