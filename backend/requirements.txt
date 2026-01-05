@@ -7,7 +7,7 @@ python-multipart==0.0.6
 pydantic==2.5.0
 pydantic-settings==2.1.0
 python-dotenv==1.0.0
-pillow==10.1.0
+pillow==10.4.0
 pillow-heif==0.13.0
 loguru==0.7.2
 httpx==0.25.2
