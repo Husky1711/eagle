@@ -15,7 +15,7 @@ email-validator==2.1.0
 aiosmtplib==3.0.1
 openpyxl==3.1.2
 xlrd==2.0.1
-pandas==2.2.2
+# pandas>=2.2.3  # Optional: Used for Excel parsing (code handles gracefully if missing, not Python 3.13 compatible yet)
 groq==0.4.1
 redis==5.0.1  # Optional: For distributed rate limiting (recommended for production)
 
