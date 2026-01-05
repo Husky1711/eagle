@@ -4,8 +4,8 @@ python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 bcrypt==4.0.1
 python-multipart==0.0.6
-pydantic==2.5.0
-pydantic-settings==2.1.0
+pydantic==2.9.2
+pydantic-settings==2.6.1
 python-dotenv==1.0.0
 pillow==10.4.0
 # pillow-heif==0.13.0  # Optional: HEIC support (not compatible with Python 3.13, code handles gracefully if missing)
