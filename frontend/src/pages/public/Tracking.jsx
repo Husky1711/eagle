@@ -60,18 +60,18 @@ const Tracking = () => {
   }
 
   const content = pageData?.content || {}
-  
+
   const getImageUrl = (filename) => {
     if (!filename) return null
     return `http://localhost:8000/uploads/${filename}`
   }
-  
+
   const pageImage = content.image
 
   return (
     <div className="min-h-screen">
       {/* Hero Section with Background Image */}
-      <section 
+      <section
         className="relative py-20 lg:py-24 overflow-hidden bg-gradient-to-br from-indigo-200 via-purple-100 to-pink-200"
         style={pageImage ? {
           backgroundImage: `url(${getImageUrl(pageImage)})`,
@@ -84,7 +84,7 @@ const Tracking = () => {
           <div className="absolute top-0 left-0 w-96 h-96 bg-indigo-300 rounded-full blur-3xl"></div>
           <div className="absolute bottom-0 right-0 w-96 h-96 bg-pink-300 rounded-full blur-3xl"></div>
         </div>
-        
+
         <Container className="relative z-10">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             {/* Left: Text Content */}
@@ -113,7 +113,7 @@ const Tracking = () => {
             >
               <div className="relative">
                 {/* Background Image */}
-                <div 
+                <div
                   className="aspect-square rounded-2xl overflow-hidden shadow-2xl"
                   style={{
                     backgroundImage: 'url(https://images.unsplash.com/photo-1600880292203-757bb62b4baf?w=800&h=800&fit=crop)',
@@ -149,84 +149,84 @@ const Tracking = () => {
         <Container>
           <div className="max-w-2xl mx-auto">
 
-          {/* Tracking Form */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.2 }}
-          >
-            <Card>
-              <form onSubmit={handleTrack} className="space-y-6">
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-2">
-                    {content.courierLabel || "Select Courier"}
-                  </label>
-                  <select
-                    value={selectedCourier}
-                    onChange={(e) => setSelectedCourier(e.target.value)}
-                    className="w-full px-4 py-3 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
-                    required
-                  >
-                    <option value="">Choose a courier...</option>
-                    {couriers.map((courier) => (
-                      <option key={courier.id} value={courier.id}>
-                        {courier.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <Input
-                  label={content.trackingLabel || "Tracking Number"}
-                  type="text"
-                  value={trackingId}
-                  onChange={(e) => setTrackingId(e.target.value)}
-                  placeholder="Enter your tracking number"
-                  required
-                />
-
-                {error && (
-                  <div className="bg-error-50 border border-error-200 text-error-600 px-4 py-3 rounded-lg">
-                    {error}
-                  </div>
-                )}
-
-                <Button
-                  type="submit"
-                  variant="primary"
-                  size="lg"
-                  disabled={loading}
-                  className="w-full"
-                >
-                  {loading ? (
-                    <>
-                      <Search className="inline-block mr-2 animate-pulse" size={20} />
-                      Redirecting...
-                    </>
-                  ) : (
-                    <>
-                      {content.trackButton || "Track Parcel"}
-                      <Search className="inline-block ml-2" size={20} />
-                    </>
-                  )}
-                </Button>
-              </form>
-            </Card>
-
-            {/* Info */}
+            {/* Tracking Form */}
             <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.6, delay: 0.4 }}
-              className="mt-8 text-center"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.2 }}
             >
-              <p className="text-sm text-neutral-600">
-                You will be redirected to the official courier tracking website
-              </p>
+              <Card>
+                <form onSubmit={handleTrack} className="space-y-6">
+                  <div>
+                    <label className="block text-sm font-medium text-neutral-700 mb-2">
+                      {content.courierLabel || "Select Courier"}
+                    </label>
+                    <select
+                      value={selectedCourier}
+                      onChange={(e) => setSelectedCourier(e.target.value)}
+                      className="w-full px-4 py-3 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
+                      required
+                    >
+                      <option value="">Choose a courier...</option>
+                      {couriers.map((courier) => (
+                        <option key={courier.id} value={courier.id}>
+                          {courier.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <Input
+                    label={content.trackingLabel || "Tracking Number"}
+                    type="text"
+                    value={trackingId}
+                    onChange={(e) => setTrackingId(e.target.value)}
+                    placeholder="Enter your tracking number"
+                    required
+                  />
+
+                  {error && (
+                    <div className="bg-error-50 border border-error-200 text-error-600 px-4 py-3 rounded-lg">
+                      {error}
+                    </div>
+                  )}
+
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    size="lg"
+                    disabled={loading}
+                    className="w-full"
+                  >
+                    {loading ? (
+                      <>
+                        <Search className="inline-block mr-2 animate-pulse" size={20} />
+                        Redirecting...
+                      </>
+                    ) : (
+                      <>
+                        {content.trackButton || "Track Parcel"}
+                        <Search className="inline-block ml-2" size={20} />
+                      </>
+                    )}
+                  </Button>
+                </form>
+              </Card>
+
+              {/* Info */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.6, delay: 0.4 }}
+                className="mt-8 text-center"
+              >
+                <p className="text-sm text-neutral-600">
+                  You will be redirected to the official courier tracking website
+                </p>
+              </motion.div>
             </motion.div>
-          </motion.div>
-        </div>
-      </Container>
+          </div>
+        </Container>
       </section>
 
       {/* Features Section */}

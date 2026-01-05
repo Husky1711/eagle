@@ -49,7 +49,7 @@ const HeroCarousel = ({ images }) => {
   // Use default images if no images provided, if images array is empty, or if all images failed to load
   const hasValidImages = images && Array.isArray(images) && images.length > 0
   const allImagesFailed = hasValidImages && imageErrors.size === images.length
-  
+
   const carouselImages = (hasValidImages && !allImagesFailed) ? images : defaultImages
 
   // Reset image errors and loading state when images change
@@ -75,7 +75,7 @@ const HeroCarousel = ({ images }) => {
       if (img.url) {
         const imgElement = new Image()
         imgElement.crossOrigin = 'anonymous'
-        
+
         const promise = new Promise((resolve, reject) => {
           imgElement.onload = () => {
             setImagesLoaded(prev => new Set([...prev, index]))
@@ -269,11 +269,10 @@ const HeroCarousel = ({ images }) => {
           <button
             key={index}
             onClick={() => goToSlide(index)}
-            className={`h-2.5 rounded-full transition-all duration-300 ${
-              index === currentIndex
+            className={`h-2.5 rounded-full transition-all duration-300 ${index === currentIndex
                 ? 'w-8 bg-white shadow-lg'
                 : 'w-2.5 bg-white/70 hover:bg-white/90'
-            }`}
+              }`}
             aria-label={`Go to slide ${index + 1}`}
           />
         ))}
